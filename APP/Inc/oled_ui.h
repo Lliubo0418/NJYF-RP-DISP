@@ -284,7 +284,7 @@ typedef struct
     float realTimeDistance;
 } RADAR_PARAM;
 
-extern volatile RADAR_PARAM gRadarParam;
+extern  RADAR_PARAM gRadarParam;
 
 // ==========================================
 // 5. 多语言资源表
