@@ -212,6 +212,7 @@ typedef struct MenuItem
     MENU_VALUE_TYPE valueType;   // value 指针指向的类型
     void *exValue;               // 附带可编辑值的地址指针
     const char *exFormat;        // 附带值的格式化串
+    uint8_t paramId;             /* 对应主板 DISP_PARAM_ID + 1；0 表示不上报主板（仅本地显示项） */
 } MenuItem;
 
 // 页面定义
@@ -282,9 +283,12 @@ typedef struct
 
     // 实时测量值
     float realTimeDistance;
+    uint8_t measPeakCount;   /* 测量状态：峰值数（来自 MEAS，非配置） */
+    uint8_t measMode;        /* 测量状态：TOF/标定模式（来自 MEAS，非配置） */
+    float sensorTemperature; /* 传感器温度（来自 DIAG 帧，非配置） */
 } RADAR_PARAM;
 
-extern volatile RADAR_PARAM gRadarParam;
+extern RADAR_PARAM gRadarParam;
 
 // ==========================================
 // 5. 多语言资源表
@@ -324,7 +328,8 @@ void UI_KeyK6_Enter(void);
 /* 协议数据更新接口（由 APP/app_disp.c 调用）：写入数据模型并置 uiDirty=1 触发重绘。
  * 字段映射为预留项，用户可据实际显示需求细化。 */
 void UI_UpdateMeas(float distance, uint8_t peak_count, uint8_t mode);
-void UI_UpdateDiag(uint8_t reliability, uint8_t status, float peakMinEmpty, float peakMaxEmpty);
+void UI_UpdateDiag(uint8_t reliability, uint8_t status, float peakMinEmpty, float peakMaxEmpty, float temperature);
 void UI_UpdateEcho(const uint8_t *echo, uint8_t len);
+void UI_UpdateParamDump(const uint8_t *payload, uint8_t len);  /* PARAM_DUMP 全量配置反序列化 */
 
 #endif

@@ -16,9 +16,12 @@
 void Disp_Init(void);
 
 /* 上行命令（显示板 -> 主板），预留，按需调用 */
-void Disp_RequestEcho(void);                 /* 0x81 请求回波帧（无参数） */
-void Disp_RequestMeas(void);                 /* 0x82 请求测量帧（无参数） */
-void Disp_SendKey(uint8_t key);             /* 0x83 转发按键：key=按键编码(1B) */
-void Disp_SetParam(uint8_t id, float value);/* 0x84 设置参数：id=参数编号(1B), value=参数值(f32) */
+void Disp_UpRequestEcho(void);                 /* 0x81 请求回波帧（无参数） */
+void Disp_UpRequestMeas(void);                 /* 0x82 请求测量帧（无参数） */
+void Disp_UpSendKey(uint8_t key);             /* 0x83 转发按键：key=按键编码(1B) */
+void Disp_UpSetParam(uint8_t id, float value);/* 0x84 设置参数：id=参数编号(1B), value=参数值(f32) */
+void Disp_UpSendStr(uint8_t id, const char *str); /* 0x85 设置字符串参数：id=参数编号, str=字符串 */
+void Disp_UpRequestInfo(void);                /* 0x86 请求传感器信息（无参数） */
+void Disp_UpRequestParamDump(void);           /* 0x87 请求全量配置（无参数） */
 
 #endif /* __APP_DISP_H */

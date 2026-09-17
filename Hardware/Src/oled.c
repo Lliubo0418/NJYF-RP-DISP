@@ -402,6 +402,7 @@ void LCD_ShowNum(uint8_t col, uint8_t page, uint8_t Num)
 // 显示图片
 void LCD_ShowBmp(uint8_t const *puts)
 {
+    if (puts == 0) return;   /* M3: 空指针保护 */
     uint8_t i, j;
     uint16_t X = 0;
     for (i = 0; i < (LCD_H / 8); i++)
@@ -597,7 +598,11 @@ void LCD_ShowArrowEx(uint8_t page, uint8_t mode, uint8_t col, const char *str)
 void LCD_DrawEchoCurve(uint8_t *echo_data, uint8_t x_scale, uint8_t y_scale)
 {
     uint8_t i, j;
-    
+
+    /* M5: 缩放因子钳位，避免 0 导致曲线退化为直线或除零 */
+    if (x_scale < 1u) x_scale = 1u;
+    if (y_scale < 1u) y_scale = 1u;
+
     // --- 坐标系基准参数 ---
     const int AXIS_X = 8;    // Y轴的水平位置 (X坐标)
     const int AXIS_Y = 55;   // X轴的垂直位置 (Y坐标)

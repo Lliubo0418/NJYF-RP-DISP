@@ -1,6 +1,8 @@
 #include "oled_ui.h"
 #include "oled.h"
 #include "oledfont.h"
+#include "dispproto.h"
+#include "app_disp.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -335,14 +337,14 @@ static void CustomFormat_diag_status(MenuItem *self, char *valBuf, char *ex1, ch
 }
 static void CustomFormat_serv_current(MenuItem *self, char *valBuf, char *ex1, char *ex2)
 {
-    uint8_t lang = gRadarParam.servLang;
+    uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
     snprintf(valBuf, CUSTOM_BUF_SIZE, "%s: %s ", UI_GetText(MENU_CURRENT_MODE), dict_currMode[lang * 2 + gRadarParam.currMode]);
     snprintf(ex1, CUSTOM_BUF_SIZE, "%s: %s ", UI_GetText(MENU_CURRENT_FAULT), dict_faultMode[lang * 3 + gRadarParam.currFault]);
     snprintf(ex2, CUSTOM_BUF_SIZE, "%s: %s ", UI_GetText(MENU_CURRENT_MIN), dict_minCurr[lang * 2 + gRadarParam.currMin]);
 }
 static void CustomFormat_serv_hartaddr(MenuItem *self, char *valBuf, char *ex1, char *ex2)
 {
-    uint8_t lang = gRadarParam.servLang;
+    uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
     snprintf(valBuf, CUSTOM_BUF_SIZE, "%s ", dict_hart[lang * 2 + gRadarParam.servHART]);
     snprintf(ex1, CUSTOM_BUF_SIZE, "%s: %d", UI_GetText(MENU_HART_ADDR), gRadarParam.servHARTAddr);
 }
@@ -368,17 +370,24 @@ static MenuItem items_root[] = {
 
 static MenuItem items_basic[] = {
     {MENU_BASIC_LOW_ADJ, MENU_FLOAT,  &gRadarParam.lowAdjustPct,  0, 100, 1,    NULL, 0, "%0.2f", NULL, NULL, NULL, CustomFormat_LowAdj,
-     RENDER_DEFAULT, VAL_FLOAT, &gRadarParam.lowAdjustVal, "%.3f"},
+     RENDER_DEFAULT, VAL_FLOAT, &gRadarParam.lowAdjustVal, "%.3f", DPARAM_LOW_ADJ_PCT + 1},
     {MENU_BASIC_HIGH_ADJ, MENU_FLOAT,  &gRadarParam.highAdjustPct, 0, 100, 1,    NULL, 0, "%0.2f", NULL, NULL, NULL, CustomFormat_HighAdj,
-     RENDER_DEFAULT, VAL_FLOAT, &gRadarParam.highAdjustVal, "%.3f"},
+     RENDER_DEFAULT, VAL_FLOAT, &gRadarParam.highAdjustVal, "%.3f", DPARAM_HIGH_ADJ_PCT + 1},
     {MENU_BASIC_MAT, MENU_PAGE,   &gRadarParam.matType, 0, 0, 0, dict_mat, 3, NULL, NULL, &Page_Mat, NULL, NULL},
-    {MENU_BASIC_DAMP_TIME, MENU_FLOAT,  &gRadarParam.dampTime, 0, 100, 1, NULL, 0, "%0.0f", "S", NULL, NULL, NULL},
-    {MENU_BASIC_OUT_MAP, MENU_SELECT, &gRadarParam.outMap, 0, 1, 1, dict_outMap, 2, NULL, NULL, NULL, NULL, NULL},
-    {MENU_BASIC_SCALE_UNIT, MENU_SELECT, &gRadarParam.scaleUnit, 0, 4, 1, dict_scaleUnit, 5, NULL, NULL, NULL, NULL, NULL},
-    {MENU_BASIC_SCALE_VAL, MENU_FLOAT,  &gRadarParam.scaleVal, 0, 1000, 1, NULL, 0, "%0.2f", NULL, NULL, NULL, NULL},
-    {MENU_BASIC_RANGE_SETTING, MENU_FLOAT,  &gRadarParam.rangeSetting, 0, 100, 0.1, NULL, 0, "%0.3f", "m", NULL, NULL, NULL},
-    {MENU_BASIC_BLIND_ZONE, MENU_FLOAT,  &gRadarParam.blindZone, 0, 10, 0.01, NULL, 0, "%0.3f", "m", NULL, NULL, NULL},
-    {MENU_BASIC_SENSOR_TAG, MENU_STRING, &gRadarParam.sensorTag, 0, 0, 0, NULL, 0, NULL, NULL, NULL, NULL, NULL}};
+    {MENU_BASIC_DAMP_TIME, MENU_FLOAT,  &gRadarParam.dampTime, 0, 100, 1, NULL, 0, "%0.0f", "S", NULL, NULL, NULL,
+     RENDER_DEFAULT, VAL_FLOAT, NULL, NULL, DPARAM_DAMP_TIME + 1},
+    {MENU_BASIC_OUT_MAP, MENU_SELECT, &gRadarParam.outMap, 0, 1, 1, dict_outMap, 2, NULL, NULL, NULL, NULL, NULL,
+     RENDER_DEFAULT, VAL_UINT8, NULL, NULL, DPARAM_OUT_MAP + 1},
+    {MENU_BASIC_SCALE_UNIT, MENU_SELECT, &gRadarParam.scaleUnit, 0, 4, 1, dict_scaleUnit, 5, NULL, NULL, NULL, NULL, NULL,
+     RENDER_DEFAULT, VAL_UINT8, NULL, NULL, DPARAM_SCALE_UNIT + 1},
+    {MENU_BASIC_SCALE_VAL, MENU_FLOAT,  &gRadarParam.scaleVal, 0, 1000, 1, NULL, 0, "%0.2f", NULL, NULL, NULL, NULL,
+     RENDER_DEFAULT, VAL_FLOAT, NULL, NULL, DPARAM_SCALE_VAL + 1},
+    {MENU_BASIC_RANGE_SETTING, MENU_FLOAT,  &gRadarParam.rangeSetting, 0, 100, 0.1, NULL, 0, "%0.3f", "m", NULL, NULL, NULL,
+     RENDER_DEFAULT, VAL_FLOAT, NULL, NULL, DPARAM_RANGE_SETTING + 1},
+    {MENU_BASIC_BLIND_ZONE, MENU_FLOAT,  &gRadarParam.blindZone, 0, 10, 0.01, NULL, 0, "%0.3f", "m", NULL, NULL, NULL,
+     RENDER_DEFAULT, VAL_FLOAT, NULL, NULL, DPARAM_BLIND_ZONE + 1},
+    {MENU_BASIC_SENSOR_TAG, MENU_STRING, &gRadarParam.sensorTag, 0, 0, 0, NULL, 0, NULL, NULL, NULL, NULL, NULL,
+     RENDER_DEFAULT, VAL_STRING, NULL, NULL, DPARAM_SENSOR_TAG + 1}};
 
 static MenuItem items_mat[] = {
     {MENU_MAT_LIQUID, MENU_PAGE, NULL, 0, 0, 0, NULL, 0, NULL, NULL, &Page_MatLiquid, NULL, NULL},
@@ -386,34 +395,35 @@ static MenuItem items_mat[] = {
     {MENU_MAT_MICRO_DK, MENU_PAGE, NULL, 0, 0, 0, NULL, 0, NULL, NULL, &Page_MatMicroDK, NULL, NULL}};
 
 static MenuItem items_mat_liquid[] = {
-    {MENU_MAT_LIQUID_FAST_CHANGE, MENU_SELECT, &gRadarParam.matFastChange, 0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_LIQUID_FIRST_WAVE, MENU_SELECT, &gRadarParam.matFirstWave,  0, 4, 1, dict_wave, 5, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_LIQUID_SURF_ANGLE, MENU_SELECT, &gRadarParam.matSurfAngle,  0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_LIQUID_FOAM, MENU_SELECT, &gRadarParam.matFoamDust,   0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_LIQUID_SMALL_DK, MENU_SELECT, &gRadarParam.matSmallDK,    0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
+    {MENU_MAT_LIQUID_FAST_CHANGE, MENU_SELECT, &gRadarParam.matFastChange, 0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_FAST_CHANGE + 1},
+    {MENU_MAT_LIQUID_FIRST_WAVE, MENU_SELECT, &gRadarParam.matFirstWave,  0, 4, 1, dict_wave, 5, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_FIRST_WAVE + 1},
+    {MENU_MAT_LIQUID_SURF_ANGLE, MENU_SELECT, &gRadarParam.matSurfAngle,  0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_SURF_ANGLE + 1},
+    {MENU_MAT_LIQUID_FOAM, MENU_SELECT, &gRadarParam.matFoamDust,   0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_FOAM_DUST + 1},
+    {MENU_MAT_LIQUID_SMALL_DK, MENU_SELECT, &gRadarParam.matSmallDK,    0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_SMALL_DK + 1},
     {MENU_MAT_LIQUID_PIPE, MENU_SELECT, &gRadarParam.matPipe, 0, 1, 1, dict_bool, 2, NULL, NULL, &Page_Pipe, NULL, NULL,
-     RENDER_PIPE, VAL_UINT8, NULL, NULL}};
+     RENDER_PIPE, VAL_UINT8, NULL, NULL, DPARAM_MAT_PIPE + 1}};
 
 static MenuItem items_mat_solid[] = {
-    {MENU_MAT_SOLID_FAST_CHANGE, MENU_SELECT, &gRadarParam.matFastChange, 0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_SOLID_FIRST_WAVE, MENU_SELECT, &gRadarParam.matFirstWave,  0, 4, 1, dict_wave, 5, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_SOLID_SURF_ANGLE, MENU_SELECT, &gRadarParam.matSurfAngle,  0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_SOLID_DUST, MENU_SELECT, &gRadarParam.matFoamDust,   0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_SOLID_SMALL_DK, MENU_SELECT, &gRadarParam.matSmallDK,    0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
+    {MENU_MAT_SOLID_FAST_CHANGE, MENU_SELECT, &gRadarParam.matFastChange, 0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_FAST_CHANGE + 1},
+    {MENU_MAT_SOLID_FIRST_WAVE, MENU_SELECT, &gRadarParam.matFirstWave,  0, 4, 1, dict_wave, 5, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_FIRST_WAVE + 1},
+    {MENU_MAT_SOLID_SURF_ANGLE, MENU_SELECT, &gRadarParam.matSurfAngle,  0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_SURF_ANGLE + 1},
+    {MENU_MAT_SOLID_DUST, MENU_SELECT, &gRadarParam.matFoamDust,   0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_FOAM_DUST + 1},
+    {MENU_MAT_SOLID_SMALL_DK, MENU_SELECT, &gRadarParam.matSmallDK,    0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_SMALL_DK + 1},
     {MENU_MAT_SOLID_PIPE, MENU_SELECT, &gRadarParam.matPipe, 0, 1, 1, dict_bool, 2, NULL, NULL, &Page_Pipe, NULL, NULL,
-     RENDER_PIPE, VAL_UINT8, NULL, NULL}};
+     RENDER_PIPE, VAL_UINT8, NULL, NULL, DPARAM_MAT_PIPE + 1}};
 
 static MenuItem items_mat_microdk[] = {
-    {MENU_MAT_MICRO_FAST_CHANGE, MENU_SELECT, &gRadarParam.matFastChange, 0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_MICRO_FIRST_WAVE, MENU_SELECT, &gRadarParam.matFirstWave,  0, 4, 1, dict_wave, 5, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_MICRO_SURF_ANGLE, MENU_SELECT, &gRadarParam.matSurfAngle,  0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
+    {MENU_MAT_MICRO_FAST_CHANGE, MENU_SELECT, &gRadarParam.matFastChange, 0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_FAST_CHANGE + 1},
+    {MENU_MAT_MICRO_FIRST_WAVE, MENU_SELECT, &gRadarParam.matFirstWave,  0, 4, 1, dict_wave, 5, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_FIRST_WAVE + 1},
+    {MENU_MAT_MICRO_SURF_ANGLE, MENU_SELECT, &gRadarParam.matSurfAngle,  0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_SURF_ANGLE + 1},
     {MENU_MAT_MICRO_NONE, MENU_READONLY, NULL, 0, 0, 0, NULL, 0, NULL, NULL, NULL, NULL, NULL},
-    {MENU_MAT_MICRO_SMALL_DK, MENU_SELECT, &gRadarParam.matSmallDK,    0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
+    {MENU_MAT_MICRO_SMALL_DK, MENU_SELECT, &gRadarParam.matSmallDK,    0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, DPARAM_MAT_SMALL_DK + 1},
     {MENU_MAT_MICRO_PIPE, MENU_SELECT, &gRadarParam.matPipe, 0, 1, 1, dict_bool, 2, NULL, NULL, &Page_Pipe, NULL, NULL,
-     RENDER_PIPE, VAL_UINT8, NULL, NULL}};
+     RENDER_PIPE, VAL_UINT8, NULL, NULL, DPARAM_MAT_PIPE + 1}};
 
 static MenuItem items_pipe[] = {
-    {MENU_PIPE_DIAMETER, MENU_FLOAT, &gRadarParam.pipeDiameter, 0, 1000, 1, NULL, 0, "%04.0f", "mm", NULL, NULL, NULL},
+    {MENU_PIPE_DIAMETER, MENU_FLOAT, &gRadarParam.pipeDiameter, 0, 1000, 1, NULL, 0, "%04.0f", "mm", NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_PIPE_DIAMETER + 1},
 };
 
 static MenuItem items_display[] = {
@@ -427,39 +437,50 @@ static MenuItem items_diag[] = {
      RENDER_STATUS, VAL_UINT8, NULL, NULL},
     {MENU_DIAG_CURVE_SEL, MENU_SELECT, &gRadarParam.diagCurveSel, 0, 2, 1, dict_curve, 3, NULL, NULL, NULL, NULL, NULL},
     {MENU_DIAG_CURVE, MENU_PAGE, NULL, 0, 0, 0, NULL, 0, NULL, NULL, &Page_Curve, NULL, NULL},
-    {MENU_DIAG_SIM, MENU_SELECT, &gRadarParam.diagSim, 0, 2, 1, dict_sim, 3, NULL, NULL, NULL, NULL, NULL}};
+    {MENU_DIAG_SIM, MENU_SELECT, &gRadarParam.diagSim, 0, 2, 1, dict_sim, 3, NULL, NULL, NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_DIAG_SIM + 1}};
 
 static MenuItem items_curve[] = {
     {MENU_CURVE_ZOOM_DIR, MENU_SELECT, &gRadarParam.diagCurveZoom, 0, 2, 1, dict_zoomDir, 3, NULL, NULL, NULL, NULL, NULL},
     {MENU_CURVE_ZOOM_SCALE, MENU_SELECT, &gRadarParam.diagCurveScale, 0, 3, 1, dict_zoomScale, 4, NULL, NULL, NULL, NULL, NULL}};
 
 static MenuItem items_service[] = {
-    {MENU_SERV_FALSE_ECHO, MENU_SELECT, &gRadarParam.servFalseEcho, 0, 3, 1, dict_flsEcho, 4, NULL, NULL, NULL, NULL, NULL},
+    {MENU_SERV_FALSE_ECHO, MENU_SELECT, &gRadarParam.servFalseEcho, 0, 3, 1, dict_flsEcho, 4, NULL, NULL, NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_SERV_FALSE_ECHO + 1},
     {MENU_SERV_CURRENT, MENU_PAGE,   NULL, 0, 0, 0, NULL, 0, NULL, NULL, &Page_Current, NULL, CustomFormat_serv_current, RENDER_SERV_CURRENT, VAL_STRING, NULL, NULL},
-    {MENU_SERV_RESET, MENU_SELECT, &gRadarParam.servReset, 0, 2, 1, dict_reset, 3, NULL, NULL, NULL, NULL, NULL},
-    {MENU_SERV_UNIT, MENU_SELECT, &gRadarParam.servUnit, 0, 1, 1, dict_unit, 2, NULL, NULL, NULL, NULL, NULL},
+    {MENU_SERV_RESET, MENU_SELECT, &gRadarParam.servReset, 0, 2, 1, dict_reset, 3, NULL, NULL, NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_SERV_RESET + 1},
+    {MENU_SERV_UNIT, MENU_SELECT, &gRadarParam.servUnit, 0, 1, 1, dict_unit, 2, NULL, NULL, NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_SERV_UNIT + 1},
     {MENU_SERV_LANG, MENU_SELECT, &gRadarParam.servLang, 0, 3, 1, dict_lang, 4, NULL, NULL, NULL, NULL, NULL},
     {MENU_SERV_HART, MENU_PAGE,   NULL, 0, 0, 0, NULL, 0, NULL, NULL, &Page_HART, NULL, CustomFormat_serv_hartaddr, RENDER_SERV_HARTADDR, VAL_STRING, NULL, NULL},
     {MENU_SERV_COPY_DATA, MENU_SELECT, &gRadarParam.servCopyData, 0, 1, 1, dict_copy, 2, NULL, NULL, NULL, NULL, NULL},
     {MENU_SERV_PWD, MENU_SELECT, &gRadarParam.servPwdEn, 0, 1, 1, dict_bool, 2, NULL, NULL, NULL, NULL, NULL},
-    {MENU_SERV_OFFSET, MENU_FLOAT,  &gRadarParam.servOffset, -10, 10, 0.01, NULL, 0, "%+0.2f", "m(d)", NULL, NULL, NULL},
+    {MENU_SERV_OFFSET, MENU_FLOAT,  &gRadarParam.servOffset, -10, 10, 0.01, NULL, 0, "%+0.2f", "m(d)", NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_SERV_OFFSET + 1},
     {MENU_SERV_THRESH, MENU_PAGE,   NULL, 0, 0, 0, NULL, 0, NULL, NULL, &Page_Thresh, NULL, CustomFormat_serv_thresh, RENDER_SERV_THRESH, VAL_STRING, NULL, NULL}};
 
 static MenuItem items_current[] = {
-    {MENU_CURRENT_MODE, MENU_SELECT, &gRadarParam.currMode,  0, 1, 1, dict_currMode, 2, NULL, NULL, NULL, NULL, NULL},
-    {MENU_CURRENT_FAULT, MENU_SELECT, &gRadarParam.currFault, 0, 3, 1, dict_faultMode, 3, NULL, NULL, NULL, NULL, NULL},
-    {MENU_CURRENT_MIN, MENU_SELECT, &gRadarParam.currMin,   0, 1, 1, dict_minCurr, 2, NULL, NULL, NULL, NULL, NULL}};
+    {MENU_CURRENT_MODE, MENU_SELECT, &gRadarParam.currMode,  0, 1, 1, dict_currMode, 2, NULL, NULL, NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_CURR_MODE + 1},
+    {MENU_CURRENT_FAULT, MENU_SELECT, &gRadarParam.currFault, 0, 3, 1, dict_faultMode, 3, NULL, NULL, NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_CURR_FAULT + 1},
+    {MENU_CURRENT_MIN, MENU_SELECT, &gRadarParam.currMin,   0, 1, 1, dict_minCurr, 2, NULL, NULL, NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_CURR_MIN + 1}};
 
 static MenuItem items_hart[] = {
-    {MENU_HART_MODE, MENU_SELECT, &gRadarParam.servHART, 0, 1, 1, dict_hart, 2, NULL, NULL, &Page_HARTAddr, NULL, NULL}};
+    {MENU_HART_MODE, MENU_SELECT, &gRadarParam.servHART, 0, 1, 1, dict_hart, 2, NULL, NULL, &Page_HARTAddr, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_SERV_HART + 1}};
 
 static MenuItem items_hart_addr[] = {
     {MENU_HART_ADDR, MENU_FLOAT, &gRadarParam.servHARTAddr, 0, 15, 1, NULL, 0, "%02.0f", NULL, NULL, NULL, NULL,
-     RENDER_SERV_HARTADDR, VAL_UINT8, NULL, NULL}};
+     RENDER_SERV_HARTADDR, VAL_UINT8, NULL, NULL, DPARAM_SERV_HART_ADDR + 1}};
 
 static MenuItem items_thresh[] = {
-    {MENU_THRESH_ECHO, MENU_FLOAT, &gRadarParam.threshEcho, 0, 200, 1, NULL, 0, "%02.0f", "mV", NULL, NULL, NULL},
-    {MENU_THRESH_ENV, MENU_FLOAT,  &gRadarParam.threshEnv,  0, 100, 1, NULL, 0, "%02.0f", "mV", NULL, NULL, NULL}};
+    {MENU_THRESH_ECHO, MENU_FLOAT, &gRadarParam.threshEcho, 0, 200, 1, NULL, 0, "%02.0f", "mV", NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_THRESH_ECHO + 1},
+    {MENU_THRESH_ENV, MENU_FLOAT,  &gRadarParam.threshEnv,  0, 100, 1, NULL, 0, "%02.0f", "mV", NULL, NULL, NULL,
+     0, 0, NULL, NULL, DPARAM_THRESH_ENV + 1}};
 
 /* --- 页面实体打包 --- */
 #define PACK_PAGE(var, title_id, p_type, arr, flatten) \
@@ -603,6 +624,9 @@ static void Edit_Float(MenuItem *item, uint8_t key)
             {
                 gUIState = UI_BROWSE;
                 editTarget = EDIT_MAIN;
+                /* 上报主板：主浮点参数（paramId=DISP_PARAM_ID+1，0=不上报） */
+                if (item->paramId != 0u)
+                    Disp_UpSetParam((uint8_t)(item->paramId - 1u), *(float *)item->value);
             }
         }
         else
@@ -613,6 +637,9 @@ static void Edit_Float(MenuItem *item, uint8_t key)
             *(float *)item->exValue = tempVal;
             gUIState = UI_BROWSE;
             editTarget = EDIT_MAIN;
+            /* 上报主板：主浮点参数（附带值为本地显示扩展，不上报） */
+            if (item->paramId != 0u)
+                Disp_UpSetParam((uint8_t)(item->paramId - 1u), *(float *)item->value);
         }
     }
 }
@@ -644,6 +671,9 @@ static void Edit_String(MenuItem *item, uint8_t key)
     {
         strcpy((char *)item->value, editStr);
         gUIState = UI_BROWSE;
+        /* 上报主板：字符串参数 */
+        if (item->paramId != 0u)
+            Disp_UpSendStr((uint8_t)(item->paramId - 1u), (const char *)item->value);
     }
 }
 
@@ -658,6 +688,9 @@ static void Edit_Select(MenuItem *item, uint8_t key)
     else if (key == 3)
     {
         gUIState = UI_BROWSE;
+        /* 上报主板：选择型参数（u8 -> float） */
+        if (item->paramId != 0u)
+            Disp_UpSetParam((uint8_t)(item->paramId - 1u), (float)(*v));
         if (item->value == &gRadarParam.servHART && *v == 0)    //hart标准模式，地址默认0
         {
             gRadarParam.servHARTAddr = 0;
@@ -705,7 +738,7 @@ static void UI_FormatItemValue(MenuItem *item, char *valBuf, char *ex1, char *ex
     if (item->type == MENU_SELECT)
     {
         uint8_t v = *((uint8_t *)item->value);
-        uint8_t lang = gRadarParam.servLang;
+        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
         if (item->optionStr && v < item->optionNum && lang < 4)
             snprintf(valBuf, CUSTOM_BUF_SIZE, "%s", item->optionStr[lang * item->optionNum + v]);
         return;
@@ -719,6 +752,9 @@ static void UI_FormatItemValue(MenuItem *item, char *valBuf, char *ex1, char *ex
             v = (float)(*((uint8_t *)item->value));
         else
             v = *((float *)item->value);
+
+        /* M2: NaN / Inf 过滤 —— 非法浮点统一显示为 0 */
+        if (!(v >= -1.0e30f && v <= 1.0e30f)) v = 0.0f;
 
         if (item->formatStr)
             snprintf(valBuf, CUSTOM_BUF_SIZE, item->formatStr, v);
@@ -848,7 +884,7 @@ static void UI_RenderHome(void)
     {                                                                              //快捷键
         LCD_DrawEchoCurve(radar_echo, 1, 1);
         uint8_t curveSel = gRadarParam.diagCurveSel;
-        uint8_t lang = gRadarParam.servLang;
+        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
         if (curveSel >= 0 && curveSel < 3)
             LCD_ShowStrExCompact(0, 0, (uint8_t *)dict_curve[lang * 3 + curveSel]);
         else
@@ -900,7 +936,7 @@ static void UI_RenderParamItem(const char *codeBuf)
     // --- 特殊: 基本设置页显示当前物料性质记忆值 ---
     if (curPage == &Page_Basic && item->subPage == &Page_Mat)
     {
-        uint8_t lang = gRadarParam.servLang;
+        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
         const char *matName = dict_mat[lang * 3 + gRadarParam.matType];
         LCD_ShowStrExCompact(30, 2, (uint8_t *)matName);
         LCD_ShowArrowEx(2, 3, 30, (char *)matName);  // 使用mode=3自动计算宽度
@@ -933,7 +969,7 @@ static void UI_RenderParamItem(const char *codeBuf)
     {
         LCD_ClearLine(0);
 		LCD_ClearLine(1);
-        uint8_t lang = gRadarParam.servLang;
+        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
         const char *dynamicName = dict_curve[lang * 3 + gRadarParam.diagCurveSel];
         LCD_ShowStrExCompact(0, 0, (uint8_t *)dynamicName);
         LCD_ShowStr_Small(128 - strlen(codeBuf) * 6, 0, codeBuf);
@@ -972,7 +1008,7 @@ static void UI_RenderParamItem(const char *codeBuf)
     if (gUIState == UI_EDIT && item->type == MENU_SELECT)
     {
         uint8_t col = 0, row = 0;
-        uint8_t lang = gRadarParam.servLang;
+        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
         for (uint8_t i = 0; i < item->optionNum; i++)
         {
             uint8_t x = (col == 0) ? 10 : 72;
@@ -1158,19 +1194,64 @@ void UI_UpdateMeas(float distance, uint8_t peak_count, uint8_t mode)
 {
     __disable_irq();
     gRadarParam.realTimeDistance = distance;
-    gRadarParam.currMin  = peak_count;
-    gRadarParam.currMode = mode;
+    gRadarParam.measPeakCount = peak_count;   /* 测量状态，不污染配置字段 currMin */
+    gRadarParam.measMode      = mode;         /* 测量状态，不污染配置字段 currMode */
     uiDirty = 1;
     __enable_irq();
 }
 
-void UI_UpdateDiag(uint8_t reliability, uint8_t status, float peakMinEmpty, float peakMaxEmpty)
+void UI_UpdateDiag(uint8_t reliability, uint8_t status, float peakMinEmpty, float peakMaxEmpty, float temperature)
 {
     __disable_irq();
     gRadarParam.diagReliability = reliability;
     gRadarParam.diagStatus      = status;
     gRadarParam.peakMinEmpty    = peakMinEmpty;
     gRadarParam.peakMaxEmpty    = peakMaxEmpty;
+    gRadarParam.sensorTemperature = temperature;   /* 传感器温度，供诊断页显示 */
+    uiDirty = 1;
+    __enable_irq();
+}
+
+/* PARAM_DUMP 全量配置反序列化：按 dispproto.h 定义的 81 字节布局逐字段写入 gRadarParam。
+ * 仅写配置字段，不动实时测量字段（realTimeDistance/measPeakCount/measMode）。 */
+void UI_UpdateParamDump(const uint8_t *payload, uint8_t len)
+{
+    if (payload == 0 || len < 81u) return;
+
+    __disable_irq();
+    uint16_t off = 0;
+    float f; uint8_t u;
+    memcpy(&f, &payload[off], 4); gRadarParam.lowAdjustPct = f; off += 4;
+    memcpy(&f, &payload[off], 4); gRadarParam.lowAdjustVal = f; off += 4;
+    memcpy(&f, &payload[off], 4); gRadarParam.highAdjustPct = f; off += 4;
+    memcpy(&f, &payload[off], 4); gRadarParam.highAdjustVal = f; off += 4;
+    u = payload[off++]; gRadarParam.matType = u;
+    u = payload[off++]; gRadarParam.matFastChange = u;
+    u = payload[off++]; gRadarParam.matFirstWave = u;
+    u = payload[off++]; gRadarParam.matSurfAngle = u;
+    u = payload[off++]; gRadarParam.matFoamDust = u;
+    u = payload[off++]; gRadarParam.matSmallDK = u;
+    u = payload[off++]; gRadarParam.matPipe = u;
+    memcpy(&f, &payload[off], 4); gRadarParam.pipeDiameter = f; off += 4;
+    memcpy(&f, &payload[off], 4); gRadarParam.dampTime = f; off += 4;
+    u = payload[off++]; gRadarParam.outMap = u;
+    u = payload[off++]; gRadarParam.scaleUnit = u;
+    memcpy(&f, &payload[off], 4); gRadarParam.scaleVal = f; off += 4;
+    memcpy(&f, &payload[off], 4); gRadarParam.rangeSetting = f; off += 4;
+    memcpy(&f, &payload[off], 4); gRadarParam.blindZone = f; off += 4;
+    u = payload[off++]; gRadarParam.currMode = u;
+    u = payload[off++]; gRadarParam.currFault = u;
+    u = payload[off++]; gRadarParam.currMin = u;
+    u = payload[off++]; gRadarParam.servReset = u;
+    u = payload[off++]; gRadarParam.servUnit = u;
+    u = payload[off++]; gRadarParam.servHART = u;
+    u = payload[off++]; gRadarParam.servHARTAddr = u;
+    memcpy(&f, &payload[off], 4); gRadarParam.servOffset = f; off += 4;
+    memcpy(&f, &payload[off], 4); gRadarParam.threshEcho = f; off += 4;
+    memcpy(&f, &payload[off], 4); gRadarParam.threshEnv = f; off += 4;
+    u = payload[off++]; gRadarParam.diagSim = u;
+    memcpy(gRadarParam.sensorTag, &payload[off], 16); off += 16;
+    gRadarParam.sensorTag[15] = '\0';
     uiDirty = 1;
     __enable_irq();
 }

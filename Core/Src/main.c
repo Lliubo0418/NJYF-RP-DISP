@@ -111,6 +111,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
      UI_Task();
+     Key_Task();   /* 非阻塞消抖：主循环完成按键确认 */
 
     /* 按键检测与处理 */
     if (Key_GetPressed(0)) // KEY3 - 返回键

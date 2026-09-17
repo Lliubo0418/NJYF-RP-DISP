@@ -43,7 +43,7 @@ static void Disp_HandleFrame(uint8_t cmd, const uint8_t *payload, uint8_t len)
     switch (cmd)
     {
         case DISP_CMD_MEAS:
-            if (len >= DISP_MEAS_LEN)
+            if (len == DISP_MEAS_LEN)   /* 精确长度校验 */
             {
                 float distance, position, delta_amp;
                 uint8_t peak_count, mode;
@@ -54,7 +54,7 @@ static void Disp_HandleFrame(uint8_t cmd, const uint8_t *payload, uint8_t len)
                 mode       = payload[13];
 
                 UI_UpdateMeas(distance, peak_count, mode);
-                /* TODO(用户补充)：position / delta_amp 的显示用途可自行扩展 */
+                /* position / delta_amp 暂存供诊断页扩展 */
             }
             break;
 
@@ -64,19 +64,33 @@ static void Disp_HandleFrame(uint8_t cmd, const uint8_t *payload, uint8_t len)
             break;
 
         case DISP_CMD_DIAG:
-            if (len >= DISP_DIAG_LEN)
+            if (len == DISP_DIAG_LEN)   /* 14 字节（含 temperature） */
             {
                 uint8_t reliability = payload[0];
                 uint8_t status      = payload[1];
-                float peakMinEmpty, peakMaxEmpty;
+                float peakMinEmpty, peakMaxEmpty, temperature;
                 memcpy(&peakMinEmpty, &payload[2], 4);
                 memcpy(&peakMaxEmpty, &payload[6], 4);
-                UI_UpdateDiag(reliability, status, peakMinEmpty, peakMaxEmpty);
+                memcpy(&temperature,  &payload[10], 4);
+                UI_UpdateDiag(reliability, status, peakMinEmpty, peakMaxEmpty, temperature);
             }
             break;
 
+        case DISP_CMD_INFO:
+            if (len == DISP_INFO_LEN)
+            {
+                /* sensorType(u8) verMajor(u8) verMinor(u8)，暂存供显示扩展 */
+                uint8_t sensorType = payload[0];
+                (void)sensorType;
+            }
+            break;
+
+        case DISP_CMD_PARAM_DUMP:
+            /* 全量配置：按 dispproto.h 定义的 81 字节布局逐字段反序列化写入 gRadarParam */
+            UI_UpdateParamDump(payload, len);
+            break;
+
         default:
-            /* 未知命令：预留扩展 / 调试计数 */
             break;
     }
 }
@@ -143,6 +157,8 @@ void Disp_Init(void)
 {
     BSP_USART_RegisterRxCallback(BSP_USART_INSTANCE_1, Disp_OnRxByte);
     BSP_USART_StartRx(BSP_USART_INSTANCE_1);   /* 启动 USART1 逐字节接收 */
+    /* 开机配置同步：请求主板下发全量配置 PARAM_DUMP，覆盖本地默认值 */
+    Disp_UpRequestParamDump();
 }
 
 /* ---------------- 上行命令发送（预留） ---------------- */
@@ -152,7 +168,7 @@ void Disp_Init(void)
  *   cmd     - 上行命令字（DISP_CMD_REQ_ECHO / REQ_MEAS / KEY / SET_PARAM）
  *   payload - 负载数据指针（无负载时传 NULL）
  *   len     - 负载字节数 */
-static void Disp_SendUplink(uint8_t cmd, const uint8_t *payload, uint8_t len)
+static void Disp_UpSendFrame(uint8_t cmd, const uint8_t *payload, uint8_t len)
 {
     uint8_t frame[2 + 1 + 1 + DISP_ECHO_LEN + 1];
     uint8_t idx = 0;
@@ -167,25 +183,47 @@ static void Disp_SendUplink(uint8_t cmd, const uint8_t *payload, uint8_t len)
 
 /* 上行：请求主板回送一帧 ECHO 回波数据（命令 0x81，无负载）。
  * 参数：无 */
-void Disp_RequestEcho(void) { Disp_SendUplink(DISP_CMD_REQ_ECHO, 0, 0); }
+void Disp_UpRequestEcho(void) { Disp_UpSendFrame(DISP_CMD_REQ_ECHO, 0, 0); }
 
 /* 上行：请求主板回送一帧 MEAS 测量数据（命令 0x82，无负载）。
  * 参数：无 */
-void Disp_RequestMeas(void) { Disp_SendUplink(DISP_CMD_REQ_MEAS, 0, 0); }
+void Disp_UpRequestMeas(void) { Disp_UpSendFrame(DISP_CMD_REQ_MEAS, 0, 0); }
 
 /* 上行：把显示板按键码转发给主板（命令 0x83）。
  * 参数：
  *   key - 按键编码（1 字节，业务自定义含义） */
-void Disp_SendKey(uint8_t key) { Disp_SendUplink(DISP_CMD_KEY, &key, 1); }
+void Disp_UpSendKey(uint8_t key) { Disp_UpSendFrame(DISP_CMD_KEY, &key, 1); }
 
 /* 上行：向主板设置某个参数（命令 0x84，预留）。
  * 参数：
  *   id    - 参数编号（1 字节，业务自定义）
  *   value - 参数值（float，按小端打包成 4 字节负载） */
-void Disp_SetParam(uint8_t id, float value)
+void Disp_UpSetParam(uint8_t id, float value)
 {
     uint8_t payload[5];
     payload[0] = id;
     memcpy(&payload[1], &value, 4);
-    Disp_SendUplink(DISP_CMD_SET_PARAM, payload, 5);
+    Disp_UpSendFrame(DISP_CMD_SET_PARAM, payload, 5);
 }
+
+/* 上行：设置字符串参数（命令 0x85）。
+ * 参数：id - 参数编号；str - 字符串（最长 250 字节，超过截断） */
+void Disp_UpSendStr(uint8_t id, const char *str)
+{
+    uint8_t payload[256];
+    uint8_t slen = 0;
+    if (str != 0)
+    {
+        while (str[slen] != '\0' && slen < 250u) slen++;
+    }
+    payload[0] = id;
+    payload[1] = slen;
+    if (slen > 0u) memcpy(&payload[2], str, slen);
+    Disp_UpSendFrame(DISP_CMD_SET_STR, payload, (uint8_t)(2u + slen));
+}
+
+/* 上行：请求传感器信息（命令 0x86，无负载） */
+void Disp_UpRequestInfo(void) { Disp_UpSendFrame(DISP_CMD_REQ_INFO, 0, 0); }
+
+/* 上行：请求全量配置（命令 0x87，无负载） */
+void Disp_UpRequestParamDump(void) { Disp_UpSendFrame(DISP_CMD_REQ_PARAM_DUMP, 0, 0); }

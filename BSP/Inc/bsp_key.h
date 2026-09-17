@@ -18,5 +18,6 @@
 uint8_t Key_GetPressed(uint8_t key_index);
 uint8_t Key_GetState(uint8_t key_index);
 void    Key_Release(uint8_t key_index);
+void    Key_Task(void);   /* 主循环调用：完成非阻塞消抖与按键状态采样 */
 
 #endif /* __BSP_KEY_H */
