@@ -213,6 +213,10 @@ typedef struct MenuItem
     void *exValue;               // 附带可编辑值的地址指针
     const char *exFormat;        // 附带值的格式化串
     uint8_t paramId;             /* 对应主板 DISP_PARAM_ID + 1；0 表示不上报主板（仅本地显示项） */
+    uint8_t exParamId;           /* 附带值对应主板 DISP_PARAM_ID + 1；0 表示不上报。
+                                  * 例：低位调整的主值=百分比(DPARAM_LOW_ADJ_PCT+1)，
+                                  * exValue=距离端点(DPARAM_LOW_ADJ_VAL+1)。
+                                  * 两者必须都上报，否则主板 span=0 → 4-20mA 恒满量程。 */
 } MenuItem;
 
 // 页面定义
@@ -303,9 +307,28 @@ extern RADAR_PARAM gRadarParam;
 #define COL_CENTER_X 30      // 文本居中起始列
 #define COL_MENU_ITEM 10     // 菜单项起始列  
 #define COL_VALUE_X 4        // 值显示起始列
+
+/* 首页左侧预留区宽度（列）—— 留给「物位」显示（标签或竖条），当前不绘制任何内容。
+ * 取 16 的三条理由：
+ *   ① 128 = 8 x 16，16 列正好是屏宽的 1/8，与其它栅格对齐（12 只有"字模宽"一个含义）；
+ *   ② 16 = 汉字字模 12 列 + 左右各 2 列呼吸 —— 竖排「物位」二字（12 列）放进去不贴边；
+ *      若日后改画物位竖条，16 列 x 32 行的长宽比也更易于远距离辨识；
+ *   ③ 代价为零：2 倍放大后最宽的读数（ft 满量程 "303.150"）只占 62 列，
+ *      右侧仍余 112 列 —— "12 列能省出 4 列给数字"这个理由并不成立。
+ * 只有一种情况该改回 12：左侧确定只放竖排汉字、且要求零留白贴屏框。
+ * 实测宽度账见 .workbuddy/tools/_zone_calc.txt。 */
+#define COL_HOME_LEFT_RESERVE 16u
+
+/* 首页左侧预留条的填充字节（2026-09-21 起该预留条不再留空，改为整条填满）。
+ * 本工程按负显（DFSTN 黑底白字）使用 ⇒ 0xFF = 亮块，0x00 = 黑块（与"不画"等效）。
+ * 若手上这批是正显（FSTN 白底黑字）批次，含义正好相反，把这里改成 0x00u。
+ * 依据见 oled.h 的 LCD_FillBlock() 注释与 LX-12864T5B 规格书第 3 节。 */
+#define HOME_LEFT_FILL_BYTE 0xFFu
 	
 
-extern const char *gLangTable[4][MENU_ID_MAX];
+/* ★必须与 oled_ui.c 的定义同形（含第二个 const）。
+ * 定义侧漏了 const 会把 1360B 指针数组放进 .data 占 RAM；此处 extern 也必须写 const 才不decl冲突。 */
+extern const char * const gLangTable[4][MENU_ID_MAX];
 
 static inline const char* UI_GetText(MENU_ID id)
 {
@@ -326,10 +349,28 @@ void UI_KeyK5_Loop(void);
 void UI_KeyK6_Enter(void);
 
 /* 协议数据更新接口（由 APP/app_disp.c 调用）：写入数据模型并置 uiDirty=1 触发重绘。
- * 字段映射为预留项，用户可据实际显示需求细化。 */
+ * 字段映射为预留项，用户可据实际显示需求细化。
+ * ★这些函数当前运行在 USART1 接收中断上下文，内部只允许 O(1) 赋值/小拷贝
+ *   （总耗时必须远小于 2 字节时间 173.6µs）；新增 O(n) 运算务必改为
+ *   "中断里置标志 + 主循环执行"，范例见 oled_ui.c 的 UI_RefreshTrendRange()。 */
 void UI_UpdateMeas(float distance, uint8_t peak_count, uint8_t mode);
 void UI_UpdateDiag(uint8_t reliability, uint8_t status, float peakMinEmpty, float peakMaxEmpty, float temperature);
 void UI_UpdateEcho(const uint8_t *echo, uint8_t len);
 void UI_UpdateParamDump(const uint8_t *payload, uint8_t len);  /* PARAM_DUMP 全量配置反序列化 */
+
+/* 带曲线类型的数据更新（对应下行 0x06 ECHO_TYPED）：
+ *   curveType 取 dispproto.h 的 DISP_CURVE_*（回波/虚假回波）。
+ * 按类型写入各自独立的缓冲，避免多条曲线互相覆盖。 */
+void UI_UpdateEchoTyped(uint8_t curveType, const uint8_t *data, uint8_t len);
+
+/* 取当前 diagCurveSel 对应的曲线数据指针（供曲线页/首页渲染）。
+ * 返回的指针指向 128 点 0~255 标度数据，可直接交给 LCD_DrawEchoCurve。
+ * 无数据时返回 NULL，渲染方据此只画坐标轴、不画假波形。 */
+const uint8_t *UI_GetSelectedCurve(void);
+
+/* 输出走势曲线已累积的有效点数（0~128）。
+ * 归档模式下小于 128 表示"还没攒够"，界面可显示进度；
+ * 也用于区分"曲线是平的"和"压根没有数据"这两种不同状态。 */
+uint8_t UI_GetTrendPointCount(void);
 
 #endif

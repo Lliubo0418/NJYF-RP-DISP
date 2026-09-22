@@ -8,14 +8,15 @@
 /* 显示板侧协议接口。
  * 接收：通过 BSP_USART_RegisterRxCallback 注册逐字节回调，解析 AA 55 CMD LEN PAYLOAD CRC，
  *       再把数据写入 oled_ui 的 gRadarParam / radar_echo，并触发 UI 重绘。
- * 发送：上行命令（显示板 -> 主板）为预留接口，按需调用。
+ * 发送：上行命令（显示板 -> 主板）由 UI 按键/参数编辑动作调用 Disp_UpXxx()。
  */
 
-/* 协议初始化：注册 USART1 接收回调并启动逐字节接收。无参数。
+/* 协议初始化：注册 USART1 接收回调并启动逐字节接收；
+ * 随后自动发送 REQ_PARAM_DUMP 请求主板下发全量配置。
  * 注意：须在 BSP_USART_Init() 之后调用。 */
 void Disp_Init(void);
 
-/* 上行命令（显示板 -> 主板），预留，按需调用 */
+/* 上行命令（显示板 -> 主板） */
 void Disp_UpRequestEcho(void);                 /* 0x81 请求回波帧（无参数） */
 void Disp_UpRequestMeas(void);                 /* 0x82 请求测量帧（无参数） */
 void Disp_UpSendKey(uint8_t key);             /* 0x83 转发按键：key=按键编码(1B) */

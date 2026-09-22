@@ -1,4 +1,4 @@
-/* 显示板侧：自定义协议接收状态机 + 上行命令发送（预留）
+/* 显示板侧：下行帧接收状态机 + 上行命令发送。
  *
  * 通过 BSP_USART_RegisterRxCallback 注册逐字节回调，
  * 解析  AA 55 CMD LEN PAYLOAD CRC  帧，写入 oled_ui 的 gRadarParam / radar_echo。
@@ -7,7 +7,7 @@
  * 这里只需在收到完整帧后交给 Disp_HandleFrame 处理。
  *
  * 设计原则：本文件只做“传输 + 帧解析 + 写入 UI 数据模型”，
- * 具体的字段显示含义（哪些值画到哪一页）是预留项，用户按需细化。
+ * 字段显示含义（哪些值画到哪一页）在 oled_ui 中实现。
  */
 #include "app_disp.h"
 #include "oled_ui.h"
@@ -30,7 +30,15 @@ static uint8_t s_cmd   = 0;
 static uint8_t s_len   = 0;
 static uint8_t s_idx   = 0;
 static uint8_t s_crc   = 0;
-static uint8_t s_payload[DISP_ECHO_LEN];   /* 最大 payload = 128 */
+/* 接收负载缓冲：必须容纳【所有下行命令里最长的 payload】。
+ * ★原为 DISP_ECHO_LEN(128)，那是当时最长的一帧（0x02 ECHO）。
+ *   新增 0x06 ECHO_TYPED 后最长变成 129（类型 1 + 数据 128），
+ *   而 S_LEN 状态的守卫是 `if (b > sizeof(s_payload))` ——
+ *   仍按 128 的话，LEN=129 会被判为"超长"直接丢帧，
+ *   表现为"虚假回波曲线永远收不到"（静默丢帧，没有任何报错）。
+ *   这里改用协议自己的上限 DISP_FRAME_MAX 相关的最大 payload，
+ *   免得下次再加命令时又要回来数一遍。 */
+static uint8_t s_payload[DISP_PAYLOAD_MAX];
 
 /* 完整帧处理：把解析出来的命令和负载写入 UI 数据模型并触发重绘。
  * 仅做“传输层 -> 数据模型”的搬运，具体字段显示到哪一页为预留项。
@@ -61,6 +69,14 @@ static void Disp_HandleFrame(uint8_t cmd, const uint8_t *payload, uint8_t len)
         case DISP_CMD_ECHO:
             /* len 正常应 == DISP_ECHO_LEN(128) */
             UI_UpdateEcho(payload, len);
+            break;
+
+        case DISP_CMD_ECHO_TYPED:
+            /* payload[0] = 曲线类型(DISP_CURVE_*)，其后为 128 点数据 */
+            if (len >= DISP_ECHO_TYPED_LEN)
+            {
+                UI_UpdateEchoTyped(payload[0], &payload[1], DISP_ECHO_LEN);
+            }
             break;
 
         case DISP_CMD_DIAG:
@@ -161,7 +177,7 @@ void Disp_Init(void)
     Disp_UpRequestParamDump();
 }
 
-/* ---------------- 上行命令发送（预留） ---------------- */
+/* ---------------- 上行命令发送（显示板 -> 主板） ---------------- */
 
 /* 上行帧组装并发送：把 cmd + payload 按 AA 55 帧格式封装后发往主板。
  * 参数：
@@ -194,7 +210,7 @@ void Disp_UpRequestMeas(void) { Disp_UpSendFrame(DISP_CMD_REQ_MEAS, 0, 0); }
  *   key - 按键编码（1 字节，业务自定义含义） */
 void Disp_UpSendKey(uint8_t key) { Disp_UpSendFrame(DISP_CMD_KEY, &key, 1); }
 
-/* 上行：向主板设置某个参数（命令 0x84，预留）。
+/* 上行：向主板设置某个参数（命令 0x84）。
  * 参数：
  *   id    - 参数编号（1 字节，业务自定义）
  *   value - 参数值（float，按小端打包成 4 字节负载） */

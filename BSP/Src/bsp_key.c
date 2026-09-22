@@ -1,6 +1,16 @@
 /* 按键 GPIO 引脚仍在 CubeMX 生成的 MX_GPIO_Init() 中初始化，
  * 本文件负责 EXTI 中断登记与主循环非阻塞消抖。
  *
+ * ★EXTI 触发边沿契约（2026-09-21 核对）：
+ *   state 的唯一写入路径是"EXTI 触发 → 消抖窗口后回读电平"，因此 state 想从 1
+ *   回到 0，就要求【松开】时也产生一次 EXTI。
+ *   => gpio.c 的按键必须配成双边沿 GPIO_MODE_IT_RISING_FALLING。
+ *   若改成仅下降沿：按下仍能正常触发 Key_GetPressed()（当前业务不受影响），
+ *      但松开不产生 EXTI，state 会长期卡在 1，Key_GetState() 失去"实时电平"语义。
+ *   核对记录：rp_disp.ioc 原本写成 GPIO_MODE_IT_FALLING，与 gpio.c 的
+ *      RISING_FALLING 不一致，已同步为双边沿。日后在 CubeMX 里重新生成代码前，
+ *      请确认本契约仍成立（对应 rp_disp.ioc 的 PB8~PB12.GPIO_ModeDefaultEXTI）。
+ *
  * 非阻塞消抖策略：
  *   - EXTI 回调只记录触发的引脚编号与时间戳，不做任何延时或采样；
  *   - Key_Task() 在主循环中轮询，距最近一次 EXTI 触发超过 KEY_DEBOUNCE_MS 后，

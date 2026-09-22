@@ -32,6 +32,18 @@ void MX_SPI1_Init(void)
 
   /* USER CODE BEGIN SPI1_Init 0 */
 
+  /* ★SPI 速率契约（2026-09-21，为排查"LCD 点不亮"所做的 A/B 试验）
+   *   DIV4  → PCLK2(72MHz)/4  = 18.0  MHz   原值；tSCYC 55.6ns/半周期 27.8ns
+   *                                        （3.3V 档要求 ≥50/≥25ns，仅 11% 余量）
+   *   DIV16 → PCLK2/16        =  4.5  MHz   已试，现象不变
+   *   DIV64 → PCLK2/64        =  1.125MHz   **现值**（用户设定）
+   * 依据：屏规格书 LX-12864T5B 标 VDD=3.3V，AiP31567 手册 3.3V 档要求
+   *   tSCYC ≥ 50ns、半周期 ≥ 25ns；参考工程"模拟 SPI"只跑 1~2MHz，
+   *   1.125MHz 已落到同一量级。若日后要提回高速，先确认线长/上拉/屏批次，
+   *   不要直接改回 DIV4。
+   * 注意：此值同时写在 rp_disp.ioc 的 SPI1.BaudRatePrescaler，
+   *   **两处必须一致**，否则下次 CubeMX 生成代码会被 .ioc 悄悄改回去。 */
+
   /* USER CODE END SPI1_Init 0 */
 
   /* USER CODE BEGIN SPI1_Init 1 */
@@ -44,7 +56,7 @@ void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
