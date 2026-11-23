@@ -73,8 +73,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  uint8_t i;
-  uint8_t contrast = 40;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -114,6 +112,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+     Disp_SendAckPoll();  /* 写参数 ACK（0x07）超时重发与结果判定：非阻塞，必须每轮调用 */
      UI_Task();
      Key_Task();   /* 非阻塞消抖：主循环完成按键确认 */
 
@@ -121,51 +120,20 @@ int main(void)
     if (Key_GetPressed(0)) // KEY3 - 返回键
     {
       UI_KeyK3_Back();
-      // LCD_ShowBmp(bmp1);
-      // delay_ms(1000);
     }
     if (Key_GetPressed(1)) // KEY4 - 上键/增加
     {
       UI_KeyK4_Up();
-      // LCD_ShowBmp(bmp3);
-      // delay_ms(1000);
     }
     if (Key_GetPressed(2)) // KEY5 - 循环键
     {
       UI_KeyK5_Loop();
-      // for (i = (contrast - 5); i < (contrast + 5); i++)
-      // {
-      //   LCD_WR_REG(0x81);
-      //   LCD_WR_REG(0x3F & i);
-      //   LCD_ShowNum(2, 0, i);
-      //   delay_ms(1000);
-      // }
-      // LCD_WR_REG(0x81);
-      // LCD_WR_REG(contrast);
-      // LCD_ShowNum(2, 0, contrast);
-      // delay_ms(1000);
     }
     if (Key_GetPressed(3)) // KEY6 - 确认键
     {
       UI_KeyK6_Enter();
-      // LCD_ShowStr(0, 0, "CA12864I2Program");
-      // delay_ms(1000);
-      // LCD_ShowStr(0, 2, "SunSon ELEC-TECH");
-      // delay_ms(1000);
-      // LCD_ShowStr(0, 4, "TEL:755-29970110");
-      // delay_ms(1000);
-      // LCD_ShowStr(0, 6, "By LJ 2009.04.08");
-      // delay_ms(1000);
     }
 
-    /* 主循环节流：用 HAL 自带的 HAL_Delay（基于 SysTick 的 uwTick，见 stm32f1xx_it.c
-     * SysTick_Handler → HAL_IncTick）。
-     * ★不要用自定义的 delay_ms：原 Drivers/SYSTEM/delay 的 delay_init() 从未被调用，
-     *   g_fac_us 恒为 0，导致 delay_ms() 实际是空操作（约 14ns），
-     *   并且它还用强符号覆盖了 HAL_Delay，将来任何 HAL_Delay 调用都会空转。
-     *   该模块已于 2026-09-20 删除。
-     * ⚠ HAL_Delay 依赖 SysTick 中断（本工程 TICK_INT_PRIORITY=15，最低优先级），
-     *   因此不能在优先级数字 <15 的中断服务程序里调用（会死等）。本处是主循环，安全。*/
     HAL_Delay(10);
   }
   /* USER CODE END 3 */
@@ -213,24 +181,16 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 
 /**
-  * @brief  TIM3 更新中断（每 500ms 一次）回调
-  * @note   由 HAL_TIM_IRQHandler(&htim3) → 本函数（覆盖 HAL 的 __weak 版本）。
-  *
-  *   定时周期核算（与 tim.c 的常量必须一致，改一处要同步另一处）：
-  *     TIM3 挂在 APB1；APB1 预分频=2 ⇒ 时钟为 HCLK 的 2 倍 = 72MHz
-  *     （STM32F1 的倍频规则：APBx 预分频 >1 时定时器时钟 = PCLKx × 2）
-  *     Prescaler = 7200-1 ⇒ 计数频率 = 72MHz / 7200 = 10kHz
-  *     Period    = 5000-1 ⇒ 溢出周期 = 5000 / 10kHz = 0.5s = 500ms ✓
-  *
-  *   LED 行为：PB1(LED_RUN) 每 500ms 翻转一次 ⇒ 亮/灭各 500ms，
-  *     完整闪烁周期 1s（1Hz 心跳灯）。
-  *
-  *   ★中断优先级：TIM3 在 tim.c 里设为 4（比 USART1=1 低，不会抢串口）。
-  *     本回调只做一次 GPIO 翻转，耗时纳秒级。若日后要在此回调里加耗时操作
-  *     （打印、SPI 写屏等），请先确认它仍不会拖慢 USART1 接收导致丢帧。
+  * @brief  TIM3 更新中断回调（500ms 一次）：翻转 LED_RUN 做 1Hz 心跳
+  * @param  htim 触发中断的定时器句柄
+  * @retval 无
   */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+  /* 周期核算：TIM3 挂 APB1，APB1 分频=2 ⇒ 定时器时钟 72MHz；Prescaler=7200-1 ⇒ 10kHz；
+   * Period=5000-1 ⇒ 0.5s。⚠ 与 tim.c 的常量必须一致，改一处要同步另一处。
+   * ⚠ TIM3 优先级 4（低于 USART1=1，不抢串口）；本回调只翻转一次 GPIO，
+   *   日后若在此加耗时操作，须先确认不会拖慢 USART1 接收导致丢帧。 */
   if (htim->Instance == TIM3)
   {
     HAL_GPIO_TogglePin(LED_RUN_GPIO_Port, LED_RUN_Pin);

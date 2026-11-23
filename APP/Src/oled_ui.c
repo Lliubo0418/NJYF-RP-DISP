@@ -3,17 +3,16 @@
 #include "oledfont.h"
 #include "dispproto.h"
 #include "app_disp.h"
+#include "main.h"     /* HAL_GetTick：写参数 ACK 提示的显示时长 */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-/* 显示缓冲区大小（与 UI_FormatItemValue / CustomFormat 调用方栈缓冲区一致） */
+/* 格式化输出缓冲大小（必须与 UI_FormatItemValue / CustomFormat 调用方栈缓冲区一致） */
 #define CUSTOM_BUF_SIZE 32u
 
-/* 曲线数据缓冲：按类型分开存放。
- * 主板用 0x02 ECHO 发实时回波、0x06 ECHO_TYPED 带类型发各诊断曲线。
- * 分缓冲是必要的 —— 原先两个曲线共用一块 buffer，接收端无法分辨，
- * 导致"选择曲线"菜单切换标题但内容永远是回波，标题与内容不符。 */
+/* 曲线数据缓冲：按类型分开存放（0x02 ECHO 发实时回波、0x06 ECHO_TYPED 发各诊断曲线）
+ * ⚠ 必须分缓冲：共用一块无法分辨类型，会导致"选择曲线"只换标题不换内容 */
 uint8_t radar_echo[128] = {
     8,  7,  9,  8, 10,  9, 11, 10,  9,  8,  9, 10, 11, 12, 10, 11,
    12, 13, 14, 15, 13, 12, 11, 10, 12, 13, 14, 15, 16, 18, 20, 22,
@@ -24,22 +23,12 @@ uint8_t radar_echo[128] = {
     6,  5,  4,  3,  2,  1,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
    10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25
 };
-/* 虚假回波曲线（空罐学习基线）。初值全 0：未收到真实数据前画平线，
- * 不用演示数据冒充——那会让现场误以为基线已生效。 */
+/* 虚假回波曲线（空罐学习基线）。初值全 0：未收到真实数据前画平线，不用演示数据冒充 */
 uint8_t radar_echo_false[128] = {0};
 
 /* ---------- 输出走势曲线：距离历史环形缓冲 ----------
- * 【为什么由显示板自攒，而不是让主控下发】
- *   MEAS 帧里本来就有 distance(f32)，显示板每收到一帧存一个点即可。
- *   → 主控零改动、协议零改动、主控无额外 RAM/Flash，是成本最低的一条路。
- *   若改由主控累积下发，则需新增一个 128×4B 的历史缓冲 + 新的下行帧类型，
- *   收益完全相同却多两处改动面。
- *
- * 【归档 vs 滚动】
- *   本工程当前只走【归档】：固定窗口长度，凑满 128 点即停止推进，
- *   保留一段稳定的历史记录（见 gTrendSwitchArchived）。
- *   滚动视图（持续覆盖最旧点）代码路径保留但默认不启用。
- */
+ * 由本板自攒：每收到一帧 MEAS 存一点即可，主控与协议零改动（改由主控下发要多两处改动面）。
+ * 当前只走【归档】：凑满 128 点即冻结（见 gTrendSwitchArchived）；滚动视图路径保留但默认不启用。 */
 #define CURVE_HIST_LEN  128u
 static float    s_hist_dist[CURVE_HIST_LEN];    /* 128×4B = 512B */
 static uint8_t  s_hist_valid = 0;               /* 已写入的有效点数（0~128） */
@@ -50,31 +39,13 @@ static float    s_hist_max   = 0.0f;
  * 单独一块而非就地转换，是为了不破坏原始 float 历史（重绘时需重新标度）。 */
 static uint8_t  s_trend_render[CURVE_HIST_LEN];
 
-/* ★走势 Y 轴范围（s_hist_min/s_hist_max）的"待重算"请求标志。
- * 【为什么要有这个标志 —— 2026-09-22 修复 UART 溢出（ORE）根因】
- *   原先这段 min/max 重算就写在 UI_UpdateMeas() 里，而该函数处在
- *   USART1 接收中断链路上（HAL_UART_RxCpltCallback → Disp_OnRxByte →
- *   Disp_HandleFrame → UI_UpdateMeas）。扫描长度 = s_hist_valid，最坏
- *   127 次软浮点比较（F103 无 FPU，每次比较都要走 __aeabi_* 辅助函数），
- *   反汇编实测中断内关闭窗口最坏约 227µs，超过 115200 8N1 的 2 字节
- *   时间（173.6µs）⇒ 触发 UART 溢出（ORE）；而本工程原先没有实现
- *   HAL_UART_ErrorCallback，接收从此永久停摆 —— 这正是"显示板跑约
- *   10 秒后数据不再变化"的根因。
- *   现改为：中断里【只记录采样 + 置位本标志】（O(1)，微秒级），
- *   min/max 扫描搬到主循环 UI_Task() 开头执行（UI_RefreshTrendRange）。
- *   历史记录的【写入顺序与数量完全不变】，只有"什么时候算范围"变了。 */
+/* 走势 Y 轴范围（s_hist_min/s_hist_max）的"待重算"请求标志。
+ * ⚠ 重算（最坏 127 次软浮点比较，F103 无 FPU）若放在 USART1 接收中断链路上会超过 2 字节时间
+ *   173.6µs → 溢出(ORE)，且本板无 ErrorCallback ⇒ 接收永久停摆。中断里只置位，扫描搬到主循环。 */
 static volatile uint8_t s_histRangeDirty = 0;
 
-/* 【已核对飞卓手册 v1.3：手册中不存在"开关/归档/转存"这类附属命令】
- *   手册 3.3 只有三选一（回波/虚假回波/输出走势），没有任何开关菜单项，
- *   附表 1 也没有。原先这里按 dict_trendSw 的设想留了两个开关位，
- *   但 dict_trendSw 在本工程中并不存在 —— 属于"凭印象预留"的假接口。
- *
- *   处理：降级为【纯内部行为开关】，不再冒充对外功能。
- *   - 归档语义保留：这是显示侧唯一合理的默认（一段固定长度的历史记录），
- *     而且是"填满即冻结"，不是用户要反复切换的东西；
- *   - 初值置 1 = 保持归档冻结行为，与上一版运行表现一致；
- *   - 不接入 MENU（手册无此菜单项，凭空多出一项反而与飞卓不一致）。 */
+/* 走势曲线模式开关（纯内部行为，不接 MENU —— 手册中不存在此菜单项）。
+ * 1 = 归档：凑满 128 点即冻结；初值 1 保持既有运行表现。 */
 uint8_t gTrendSwitchArchived = 1;
 
 RADAR_PARAM gRadarParam;
@@ -85,16 +56,16 @@ static volatile uint8_t uiDirty = 1;
 static char editStr[16] = {0};
 static uint8_t editCursorPos = 0;
 static EDIT_SUBMODE editTarget = EDIT_MAIN;
-/* SELECT 编辑原值快照：Edit_Select 就地修改 *value，K3 取消时据此回滚，
- * 与 FLOAT/STRING 使用独立 editStr 的"取消即丢弃"语义保持一致。 */
+/* SELECT 编辑原值快照：Edit_Select 就地修改 *value，K3 取消时据此回滚；
+ * FLOAT/STRING 改的是 editStr，随状态退出自然丢弃。 */
 static uint8_t editSelectOrig = 0;
 
 /* --- 多语言扁平化字典常量数组 (结构: [Lang_0_Options..., Lang_1_Options...]) --- */
 static const char * const dict_bool[] = {
-    "否", "是",                 // CN
-    "No", "Yes",                // EN
-    "No", "Si",                 // IT
-    "Non", "Oui"                // FR
+    "否", "是",
+    "No", "Yes",
+    "No", "Si",
+    "Non", "Oui"
 };
 
 static const char * const dict_mat[] = {
@@ -223,10 +194,9 @@ static const char * const dict_copy[] = {
     "Du Capteur", "Au Capteur"
 };
 
-/* --- 多语言资源表 --- */
-/* ★ 必须 const：指针数组不加 const 会被放进 .data（RAM）。
- * 同文件全部 dict_*都是 static const char * const，只有本表漏了 const。
- * F103CB 只有 20KB RAM，这 1360B 纯属浪费（字符串本就在 Flash）。 */
+/* --- 多语言资源表 ---
+ * ⚠ 每行条目必须与 MENU_ID 枚举同序同长（列索引 = MENU_ID），增删菜单项须同步；
+ *   且必须 const，否则 1360B 指针数组会落进 .data 占 RAM（F103CB 仅 20KB）。 */
 const char * const gLangTable[4][MENU_ID_MAX] = {
     // 中文
     {
@@ -264,7 +234,6 @@ const char * const gLangTable[4][MENU_ID_MAX] = {
         // 其他固定文本
         "正常工作", "回波曲线", "导波管直径:", "mm"
     },
-    // English
     {
         // 根菜单
         "Basic", "Display", "Diag", "Service",
@@ -300,7 +269,6 @@ const char * const gLangTable[4][MENU_ID_MAX] = {
         // 其他固定文本
         "Normal", "Curve", "Pipe Dia:", "mm"
     },
-    // Italian
     {
         // 根菜单
         "Base", "Display", "Diag", "Service",
@@ -336,7 +304,6 @@ const char * const gLangTable[4][MENU_ID_MAX] = {
         // 其他固定文本
         "Normale", "Curva", "Diametro:", "mm"
     },
-    // French
     {
         // 根菜单
         "Base", "Display", "Diag", "Service",
@@ -375,35 +342,73 @@ const char * const gLangTable[4][MENU_ID_MAX] = {
 };
 
 /* --- 自定义格式化回调 --- */
+/**
+ * @brief  低位调整项的显示格式化
+ * @param  self   菜单项
+ * @param  valBuf 主值输出（百分比）
+ * @param  ex1    附带值1输出（当前端点距离）
+ * @param  ex2    附带值2输出（实时距离）
+ * @retval 无
+ */
 static void CustomFormat_LowAdj(MenuItem *self, char *valBuf, char *ex1, char *ex2)
 {
     snprintf(valBuf, CUSTOM_BUF_SIZE, "%0.2f %%", *((float *)self->value));
     snprintf(ex1, CUSTOM_BUF_SIZE, "%.3f m(d)", gRadarParam.lowAdjustVal);
     snprintf(ex2, CUSTOM_BUF_SIZE, "%.3f m(d)", gRadarParam.realTimeDistance);
 }
+/**
+ * @brief  高位调整项的显示格式化
+ * @param  self   菜单项
+ * @param  valBuf 主值输出（百分比）
+ * @param  ex1    附带值1输出（当前端点距离）
+ * @param  ex2    附带值2输出（实时距离）
+ * @retval 无
+ */
 static void CustomFormat_HighAdj(MenuItem *self, char *valBuf, char *ex1, char *ex2)
 {
     snprintf(valBuf, CUSTOM_BUF_SIZE, "%0.2f %%", *((float *)self->value));
     snprintf(ex1, CUSTOM_BUF_SIZE, "%.3f m(d)", gRadarParam.highAdjustVal);
     snprintf(ex2, CUSTOM_BUF_SIZE, "%.3f m(d)", gRadarParam.realTimeDistance);
 }
+/**
+ * @brief  诊断页空罐峰值区间
+ * @param  self   菜单项
+ * @param  valBuf 主值输出（最小空高值）
+ * @param  ex1    附带值1输出（最大空高值）
+ * @param  ex2    未使用
+ * @retval 无
+ */
 static void CustomFormat_peakMinMaxEmpty(MenuItem *self, char *valBuf, char *ex1, char *ex2)
 {
     snprintf(valBuf, CUSTOM_BUF_SIZE, "%s: %.0f m(d)", UI_GetText(TEXT_PEAK_MIN_EMPTY), gRadarParam.peakMinEmpty);
     snprintf(ex1, CUSTOM_BUF_SIZE, "%s: %.0f m(d)", UI_GetText(TEXT_PEAK_MAX_EMPTY), gRadarParam.peakMaxEmpty);
 }
+/**
+ * @brief  诊断页测量状态（可靠性 + 状态位）
+ * @param  self   菜单项
+ * @param  valBuf 主值输出（可靠度 dB）
+ * @param  ex1    附带值1输出（状态位）
+ * @param  ex2    未使用
+ * @retval 无
+ */
 static void CustomFormat_diag_status(MenuItem *self, char *valBuf, char *ex1, char *ex2)
 {
     snprintf(valBuf, CUSTOM_BUF_SIZE, "%s: %d dB", UI_GetText(TEXT_DIAG_RELIABILITY), gRadarParam.diagReliability);
     snprintf(ex1, CUSTOM_BUF_SIZE, "%s: %d K", UI_GetText(TEXT_DIAG_STATUS), gRadarParam.diagStatus);
 }
+/**
+ * @brief  服务页电流输出三档汇总
+ * @param  self   菜单项
+ * @param  valBuf 主值输出（输出模式）
+ * @param  ex1    附带值1输出（故障模式）
+ * @param  ex2    附带值2输出（最小电流）
+ * @retval 无
+ */
 static void CustomFormat_serv_current(MenuItem *self, char *valBuf, char *ex1, char *ex2)
 {
-    uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
-    /* ★索引钳位：三个选择值都存在 EEPROM，降级/换固件/异常写后可能残留越界值。
-     *   字典是"4 语言 × N 档"的扁平数组，索引 = lang*N + 档位；
-     *   若档位超界，跨到最后一种语言时会直接读出数组末尾之外 —— 越界读。
-     *   这里按各自的每语言档数钳位（2/3/2），与 max+1 无关，是纯防御。 */
+    uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* 语言索引钳位 */
+    /* ⚠ 索引钳位：lang 与三个档位都存在 EEPROM，可能残留越界值；字典是"4 语言 × N 档"
+     *   扁平数组（索引 = lang*N + 档位），不钳位会读越界，故按每语言档数(2/3/2)钳位。 */
     uint8_t m  = (gRadarParam.currMode  > 1u) ? 1u : gRadarParam.currMode;
     uint8_t ft = (gRadarParam.currFault > 2u) ? 2u : gRadarParam.currFault;
     uint8_t mn = (gRadarParam.currMin   > 1u) ? 1u : gRadarParam.currMin;
@@ -411,12 +416,28 @@ static void CustomFormat_serv_current(MenuItem *self, char *valBuf, char *ex1, c
     snprintf(ex1, CUSTOM_BUF_SIZE, "%s: %s ", UI_GetText(MENU_CURRENT_FAULT), dict_faultMode[lang * 3 + ft]);
     snprintf(ex2, CUSTOM_BUF_SIZE, "%s: %s ", UI_GetText(MENU_CURRENT_MIN), dict_minCurr[lang * 2 + mn]);
 }
+/**
+ * @brief  服务页 HART 工作模式 + 地址
+ * @param  self   菜单项
+ * @param  valBuf 主值输出（工作模式）
+ * @param  ex1    附带值1输出（地址）
+ * @param  ex2    未使用
+ * @retval 无
+ */
 static void CustomFormat_serv_hartaddr(MenuItem *self, char *valBuf, char *ex1, char *ex2)
 {
-    uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
+    uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* 语言索引钳位 */
     snprintf(valBuf, CUSTOM_BUF_SIZE, "%s ", dict_hart[lang * 2 + gRadarParam.servHART]);
     snprintf(ex1, CUSTOM_BUF_SIZE, "%s: %d", UI_GetText(MENU_HART_ADDR), gRadarParam.servHARTAddr);
 }
+/**
+ * @brief  服务页阈值（回波阈值 + 包络线）
+ * @param  self   菜单项
+ * @param  valBuf 主值输出（回波阈值）
+ * @param  ex1    附带值1输出（包络线）
+ * @param  ex2    未使用
+ * @retval 无
+ */
 static void CustomFormat_serv_thresh(MenuItem *self, char *valBuf, char *ex1, char *ex2)
 {
     snprintf(valBuf, CUSTOM_BUF_SIZE, "%s: %.0f ", UI_GetText(MENU_THRESH_ECHO), gRadarParam.threshEcho);
@@ -451,7 +472,10 @@ static MenuItem items_basic[] = {
      RENDER_DEFAULT, VAL_UINT8, NULL, NULL, DPARAM_SCALE_UNIT + 1},
     {MENU_BASIC_SCALE_VAL, MENU_FLOAT,  &gRadarParam.scaleVal, 0, 1000, 1, NULL, 0, "%0.2f", NULL, NULL, NULL, NULL,
      RENDER_DEFAULT, VAL_FLOAT, NULL, NULL, DPARAM_SCALE_VAL + 1},
-    {MENU_BASIC_RANGE_SETTING, MENU_FLOAT,  &gRadarParam.rangeSetting, 0, 100, 0.1, NULL, 0, "%0.3f", "m", NULL, NULL, NULL,
+    /* ⚠ 量程设定必须用 "%05.2f"（2 位整数 + 2 位小数）：Edit_Float() 逐位 0~9 循环、不进位，
+     *   用 "%0.3f" 只能编辑到 9.999 m。上报米值，主板按 <=15/<=30/<=45/<=60/其余 映射档 1~5；
+     *   切档后 EEPROM 基线点数不匹配 ⇒ 基线作废、测量 SUPPRESSED，须空罐重新学习。 */
+    {MENU_BASIC_RANGE_SETTING, MENU_FLOAT,  &gRadarParam.rangeSetting, 0, 100, 0.1, NULL, 0, "%05.2f", "m", NULL, NULL, NULL,
      RENDER_DEFAULT, VAL_FLOAT, NULL, NULL, DPARAM_RANGE_SETTING + 1},
     {MENU_BASIC_BLIND_ZONE, MENU_FLOAT,  &gRadarParam.blindZone, 0, 10, 0.01, NULL, 0, "%0.3f", "m", NULL, NULL, NULL,
      RENDER_DEFAULT, VAL_FLOAT, NULL, NULL, DPARAM_BLIND_ZONE + 1},
@@ -504,8 +528,8 @@ static MenuItem items_diag[] = {
      RENDER_PEAK, VAL_FLOAT, NULL, NULL},
     {MENU_DIAG_STATUS, MENU_READONLY, NULL, 0, 0, 0, NULL, 0, NULL, NULL, NULL, NULL, CustomFormat_diag_status,
      RENDER_STATUS, VAL_UINT8, NULL, NULL},
-    /* 曲线选择：三条曲线（回波/虚假回波/输出走势）现均有真实数据源。
-     * 输出走势曲线由本板自攒距离历史生成，主控与协议无需参与。 */
+    /* 曲线选择：三条曲线（回波/虚假回波/输出走势）均有真实数据源；
+     * 输出走势由本板自攒距离历史生成，主控与协议无需参与 */
     {MENU_DIAG_CURVE_SEL, MENU_SELECT, &gRadarParam.diagCurveSel, 0, 2, 1, dict_curve, 3, NULL, NULL, NULL, NULL, NULL},
     {MENU_DIAG_CURVE, MENU_PAGE, NULL, 0, 0, 0, NULL, 0, NULL, NULL, &Page_Curve, NULL, NULL},
     {MENU_DIAG_SIM, MENU_SELECT, &gRadarParam.diagSim, 0, 2, 1, dict_sim, 3, NULL, NULL, NULL, NULL, NULL,
@@ -534,11 +558,8 @@ static MenuItem items_service[] = {
 static MenuItem items_current[] = {
     {MENU_CURRENT_MODE, MENU_SELECT, &gRadarParam.currMode,  0, 1, 1, dict_currMode, 2, NULL, NULL, NULL, NULL, NULL,
      0, 0, NULL, NULL, DPARAM_CURR_MODE + 1},
-    /* max=2：字典每语言 3 档，索引 0..2。
-     * ★原为 3，是 max+1>optionNum 的越界笔误。当时被 Edit_Select 的
-     *   min(max+1,optionNum) 钳位挡住，看不出问题；但 max 是"业务允许选到哪"的
-     *   声明值，一旦有别的代码直接信它，就会用 currFault=3 去索引
-     *   dict_faultMode（每语言仅 3 档）——最坏 lang=3 时下标 12 越出 12 元素数组。 */
+    /* max=2：dict_faultMode 每语言 3 档，索引 0..2。
+     * ⚠ max 是"业务允许选到哪"的声明值，不可设成 3（max+1=4 > 3 档，直接索引即越界）。 */
     {MENU_CURRENT_FAULT, MENU_SELECT, &gRadarParam.currFault, 0, 2, 1, dict_faultMode, 3, NULL, NULL, NULL, NULL, NULL,
      0, 0, NULL, NULL, DPARAM_CURR_FAULT + 1},
     {MENU_CURRENT_MIN, MENU_SELECT, &gRadarParam.currMin,   0, 1, 1, dict_minCurr, 2, NULL, NULL, NULL, NULL, NULL,
@@ -593,6 +614,11 @@ static MenuPage *curPage = &Page_Root;
 static uint8_t curIndex = 0;
 static uint8_t topIndex = 0;
 
+/**
+ * @brief  生成当前位置的菜单编号（如 "2-3-1"），写进 buf
+ * @param  buf 输出缓冲（调用方保证 ≥16 字节）
+ * @retval 无
+ */
 static void Get_Menu_Code_String(char *buf)
 {
     buf[0] = '\0';
@@ -624,6 +650,11 @@ static void Get_Menu_Code_String(char *buf)
     }
 }
 
+/**
+ * @brief  把菜单项当前值按 formatStr 格式化成编辑串 editStr，光标归位
+ * @param  item 菜单项（valueType 决定取值方式）
+ * @retval 无
+ */
 static void Float_To_EditStr(MenuItem *item)
 {
     if (!item || !item->value) return;
@@ -642,6 +673,11 @@ static void Float_To_EditStr(MenuItem *item)
     editCursorPos = 0;
 }
 
+/**
+ * @brief  把编辑串解析回数值并按 min/max 钳位后写回菜单项
+ * @param  item 菜单项
+ * @retval 无
+ */
 static void Save_EditStr_To_Float(MenuItem *item)
 {
     if (!item || !item->value) return;
@@ -655,9 +691,14 @@ static void Save_EditStr_To_Float(MenuItem *item)
         *((float *)item->value) = tempVal;
 }
 
+/**
+ * @brief  浮点项编辑：key 1=改当前位 2=移光标 3=确认（主值→附带值→上报）
+ * @param  item 菜单项
+ * @param  key  按键码 1/2/3
+ * @retval 无
+ */
 static void Edit_Float(MenuItem *item, uint8_t key)
 {
-    /* 光标边界保护：确保不越出 editStr 数组 */
     if (editCursorPos >= sizeof(editStr) - 1)
         editCursorPos = 0;
 
@@ -702,13 +743,11 @@ static void Edit_Float(MenuItem *item, uint8_t key)
                 editTarget = EDIT_MAIN;
                 /* 上报主板：主浮点参数（paramId=DISP_PARAM_ID+1，0=不上报） */
                 if (item->paramId != 0u)
-                    Disp_UpSetParam((uint8_t)(item->paramId - 1u), *(float *)item->value);
-                /* 上报主板：扩展浮点参数（如"低位调整"的距离端点值）。
-                 * exValue 已随本次确认写入本地，这里必须一并上报——否则主板侧
-                 * lowAdjustVal/highAdjustVal 恒为 0，span=0 被强制为 1，
-                 * 导致 4-20mA 任何 distance>0 都输出满量程（恒 20mA 故障根因）。*/
+                    Disp_SendSetParam((uint8_t)(item->paramId - 1u), *(float *)item->value);
+                /* ⚠ 扩展参数（如低位调整的距离端点）必须与主值一并上报：否则主板侧
+                 *   lowAdjustVal/highAdjustVal 恒为 0、span=0，4-20mA 会恒输出满量程。 */
                 if (item->exValue != NULL && item->exParamId != 0u)
-                    Disp_UpSetParam((uint8_t)(item->exParamId - 1u), *(float *)item->exValue);
+                    Disp_SendSetParam((uint8_t)(item->exParamId - 1u), *(float *)item->exValue);
             }
         }
         else
@@ -721,16 +760,21 @@ static void Edit_Float(MenuItem *item, uint8_t key)
             editTarget = EDIT_MAIN;
             /* 上报主板：主浮点参数 + 扩展浮点参数（两者都要发） */
             if (item->paramId != 0u)
-                Disp_UpSetParam((uint8_t)(item->paramId - 1u), *(float *)item->value);
+                Disp_SendSetParam((uint8_t)(item->paramId - 1u), *(float *)item->value);
             if (item->exValue != NULL && item->exParamId != 0u)
-                Disp_UpSetParam((uint8_t)(item->exParamId - 1u), *(float *)item->exValue);
+                Disp_SendSetParam((uint8_t)(item->exParamId - 1u), *(float *)item->exValue);
         }
     }
 }
 
+/**
+ * @brief  字符串项编辑：key 1=换字母 2=移光标 3=确认并上报
+ * @param  item 菜单项
+ * @param  key  按键码 1/2/3
+ * @retval 无
+ */
 static void Edit_String(MenuItem *item, uint8_t key)
 {
-    /* 光标边界保护：确保不越出 editStr 数组 */
     if (editCursorPos >= sizeof(editStr) - 1)
         editCursorPos = 0;
 
@@ -757,20 +801,22 @@ static void Edit_String(MenuItem *item, uint8_t key)
         gUIState = UI_BROWSE;
         /* 上报主板：字符串参数 */
         if (item->paramId != 0u)
-            Disp_UpSendStr((uint8_t)(item->paramId - 1u), (const char *)item->value);
+            Disp_SendStr((uint8_t)(item->paramId - 1u), (const char *)item->value);
     }
 }
 
+/**
+ * @brief  选择项编辑：key 1/2=循环取值 3=确认（上报并按需进入子页）
+ * @param  item 菜单项
+ * @param  key  按键码 1/2/3
+ * @retval 无
+ */
 static void Edit_Select(MenuItem *item, uint8_t key)
 {
     uint8_t *v = (uint8_t *)item->value;
     /* 可选上限 = min(字典条目数, max+1)。
-     * ★不能只用 optionNum 循环：optionNum 是"字典里有几个字符串"，
-     *   而 max 才是"业务上允许选到哪一项"。二者在多数项上恰好相等，
-     *   所以原先"按 optionNum 循环"看不出问题；一旦某个字典条目多于
-     *   业务允许项（或反之），就会越过边界选到不该出现的那一项。
-     *   例：MENU_CURRENT_FAULT 字典 3 条、max=3，max+1=4 > 3，
-     *   必须靠这里的钳位才能落回 3 —— 详见下方 limit 计算。 */
+     * ⚠ optionNum 是"字典里有几条"，max 才是"业务允许选到哪"，二者不可互相替代 ——
+     *   只用 optionNum 循环会选到不该出现的项。 */
     uint8_t limit = (uint8_t)(item->max + 1.0f);
     if (limit == 0u || limit > item->optionNum)
         limit = item->optionNum;
@@ -785,7 +831,7 @@ static void Edit_Select(MenuItem *item, uint8_t key)
         gUIState = UI_BROWSE;
         /* 上报主板：选择型参数（u8 -> float） */
         if (item->paramId != 0u)
-            Disp_UpSetParam((uint8_t)(item->paramId - 1u), (float)(*v));
+            Disp_SendSetParam((uint8_t)(item->paramId - 1u), (float)(*v));
         if (item->value == &gRadarParam.servHART && *v == 0)    //hart标准模式，地址默认0
         {
             gRadarParam.servHARTAddr = 0;
@@ -802,6 +848,12 @@ static void Edit_Select(MenuItem *item, uint8_t key)
     }
 }
 
+/**
+ * @brief  按菜单项类型分派编辑按键
+ * @param  item 菜单项
+ * @param  key  按键码
+ * @retval 无
+ */
 static void Process_Edit_Key(MenuItem *item, uint8_t key)
 {
     switch (item->type)
@@ -820,26 +872,31 @@ static void Process_Edit_Key(MenuItem *item, uint8_t key)
     }
 }
 
+/**
+ * @brief  格式化菜单项显示值（优先自定义回调，否则按类型格式化到 valBuf/ex1/ex2）
+ * @param  item   菜单项
+ * @param  valBuf 主值输出
+ * @param  ex1    附带值1输出
+ * @param  ex2    附带值2输出
+ * @retval 无
+ */
 static void UI_FormatItemValue(MenuItem *item, char *valBuf, char *ex1, char *ex2)
 {
-    // 1. customFormat 回调优先
     if (item->customFormat != NULL)
     {
         item->customFormat(item, valBuf, ex1, ex2);
         return;
     }
 
-    // 2. SELECT 型: 从扁平化多语言 optionStr 读取选项文本
     if (item->type == MENU_SELECT)
     {
         uint8_t v = *((uint8_t *)item->value);
-        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
+        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* 语言索引钳位 */
         if (item->optionStr && v < item->optionNum && lang < 4)
             snprintf(valBuf, CUSTOM_BUF_SIZE, "%s", item->optionStr[lang * item->optionNum + v]);
         return;
     }
 
-    // 3. FLOAT / READONLY 型
     if (item->type == MENU_FLOAT || item->type == MENU_READONLY)
     {
         float v;
@@ -848,7 +905,7 @@ static void UI_FormatItemValue(MenuItem *item, char *valBuf, char *ex1, char *ex
         else
             v = *((float *)item->value);
 
-        /* M2: NaN / Inf 过滤 —— 非法浮点统一显示为 0 */
+        /* NaN / Inf 过滤：非法浮点统一显示为 0 */
         if (!(v >= -1.0e30f && v <= 1.0e30f)) v = 0.0f;
 
         if (item->formatStr)
@@ -864,7 +921,6 @@ static void UI_FormatItemValue(MenuItem *item, char *valBuf, char *ex1, char *ex
         return;
     }
 
-    // 4. STRING 型: 直接拷贝
     if (item->type == MENU_STRING)
     {
         snprintf(valBuf, CUSTOM_BUF_SIZE, "%s", (char *)item->value);
@@ -872,6 +928,15 @@ static void UI_FormatItemValue(MenuItem *item, char *valBuf, char *ex1, char *ex
     }
 }
 
+/**
+ * @brief  按 renderMode 把值画到屏幕（含编辑光标）
+ * @param  item      菜单项
+ * @param  valBuf    主值字符串
+ * @param  ex1       附带值1字符串
+ * @param  ex2       附带值2字符串
+ * @param  isEditing 1=编辑态（画反显光标）
+ * @retval 无
+ */
 static void UI_RenderByMode(MenuItem *item, const char *valBuf,
                             const char *ex1, const char *ex2, uint8_t isEditing)
 {
@@ -969,50 +1034,21 @@ static void UI_RenderByMode(MenuItem *item, const char *valBuf,
     }
 }
 
+/**
+ * @brief  画首页：view_mode 0 = 正常读数页，1 = 曲线页
+ * @retval 无
+ */
 static void UI_RenderHome(void)
 {
     char val[24];
 
     if (home_view_mode == 0)
     {
-        /* 首页正常视图 —— 版式对标样机（`功能图片/IMG_2180.jpg`，样机首页实拍）：
-         *
-         *   左 16 列 (col 0..15)          ：【预留】给「物位」显示（标签或竖条），
-         *                                  当前用一整条亮块填满（8 页全高），把这块
-         *                                  空间显式占住；以后画物位标签/竖条时直接
-         *                                  覆盖即可，不用再动版式。
-         *                                  宽度见 oled_ui.h 的 COL_HOME_LEFT_RESERVE，
-         *                                  填充值见 HOME_LEFT_FILL_BYTE。
-         *   大行1~2 (逻辑页 0~3, y=0..31) ：大字读数，8x16 字模 2 倍放大 → 16x32，
-         *                                  在 col 16..127 内【居中】（不再顶右缘）
-         *   大行3   (逻辑页 4~5, y=32..47)：单位 m / ft，8x16，右缘对齐读数墨迹右缘
-         *   大行4   (逻辑页 6~7, y=48..63)：传感器标签（gRadarParam.sensorTag），
-         *                                  左缘让开预留条（col 16）
-         *
-         * ★为什么数字居中而不是右对齐：样机首页数字两侧留白是 41 / 22 列（偏右），
-         *   但本屏左侧被预留条占去 16 列，若仍顶右缘则整块读数挤在右半边、
-         *   左侧 16+31 列连着空，视觉上"偏"得很明显。以 [16,127] 为区居中后，
-         *   数字左右留白接近相等，也符合"稍微靠中"的要求。
-         *   实测：2 倍放大下最宽的读数（ft 满量程 "303.150"）只占 62 列，
-         *   可用区 112 列 —— 居中不会挤；见 .workbuddy/tools/_zone_calc.txt。
-         *
-         * ★量取依据：把样机首页照片按屏体矩形换算到 128x64 逻辑坐标后做像素剖面 ——
-         *   数值实测高约 31~32 行（正好 2 倍于 8x16 字模）、右缘止于约第 115 列；
-         *   单位 "m" 落在其右下方（大行3）；底行标签占满大行4。
-         * ★样机首页【没有标题行】，故这里不再画 UI_GetText(TEXT_HOME_NORMAL)。
-         *   该枚举与四种语言的文案仍保留在 gLangTable 里，随时可以加回。
-         *
-         * ★区分"有效测量"与"无回波"：measPeakCount == 0 表示本轮没测到峰，
-         *   此时 realTimeDistance 无意义（主板会按故障模式处理电流）。
-         *   若照原样打印，会显示成 0.000 或上次残值 —— 让现场误以为
-         *   "液位掉到底了"。故无效时显式打 "----"，不假装有数。
-         *   注意：单位单独画在下一行，所以这里的字符串【不带单位】。 */
-        /* 左侧预留条：一整条亮块（逻辑 col 0..15 × 全部 8 页）。
-         * ★必须排在下面前几个绘制之前 —— 本驱动的绘制函数只点亮"字模里为 1 的
-         *   像素"、不写背景（见 oled.c 文件头），先填后画，后来的字才能干净地叠
-         *   在亮底上；若反序，亮块会把已画好的内容整条压掉。
-         * 0xFF = 亮块（本工程按负显使用，见 oled.h 的 LCD_FillBlock() 注释）。
-         * 屏体若倒装，列地址由 LCD_SetPageCol() 自动跟着翻，无需在此另行处理。 */
+        /* 版式：col 0..15【预留】物位显示区（当前整条填满）；逻辑页 0..3 大字读数（8x16 字模 2 倍放
+         * 大为 16x32，在 col 16..127 内居中）；逻辑页 4..5 单位；逻辑页 6..7 传感器标签。
+         * ⚠ measPeakCount==0 即本轮无峰、realTimeDistance 无意义，须显式打 "----"；此处字符串不带单位 */
+        /* 左侧预留条：一整条亮块（逻辑 col 0..15 × 全部 8 页），0xFF = 亮块（负显）。
+         * ⚠ 必须先填后画：绘制只点亮字模为 1 的像素、不写背景，反序会被亮块整条压掉 */
         LCD_FillBlock(0u, 0u, (uint8_t)COL_HOME_LEFT_RESERVE, 8u,
                       (uint8_t)HOME_LEFT_FILL_BYTE);
 
@@ -1021,11 +1057,9 @@ static void UI_RenderHome(void)
         else
             snprintf(val, sizeof(val), "----");
 
-        /* 大字读数：在「左侧预留区右缘 ~ 屏幕右缘」之间居中。
-         * ★量宽必须用 LCD_GetStrBigWidth（与绘制推进量同口径），
-         * 不能用 LCD_GetStrCompactWidth —— 后者对数字一律按固定 9 列计，
-         * 而实际绘制按"墨迹宽度+1"，两者不等，对齐就偏。
-         * 串长超出可用区时退回预留区右缘起笔，宁可贴边也不让列地址回绕。 */
+        /* 大字读数：在「预留区右缘 ~ 屏幕右缘」之间居中。
+         * ⚠ 量宽必须用 LCD_GetStrBigWidth（与绘制推进量同口径），不可用 LCD_GetStrCompactWidth
+         *   （后者对数字固定按 9 列计，与实际墨迹宽度不等，对齐会偏）。 */
         uint16_t bigW  = LCD_GetStrBigWidth(val);
         uint16_t avail = (uint16_t)(LCD_W - COL_HOME_LEFT_RESERVE);
         uint8_t  bigCol = (bigW <= avail)
@@ -1033,16 +1067,10 @@ static void UI_RenderHome(void)
                           : (uint8_t)COL_HOME_LEFT_RESERVE;
         LCD_ShowStrExBig(bigCol, 0, val);
 
-        /* 单位：对标样机首页只画裸单位（m / ft）；完整串 "m(d)" 仍保留在
-         * 服务 → 测量单位 菜单里显示。右缘对齐读数的【墨迹】右缘。
-         * servUnit 来自 PARAM_DUMP，越界时按 m 处理（与菜单里的钳位口径一致）。
-         *
-         * ★这里【必须】逐字符调用 LCD_ShowCharCompact，不能图省事用
-         *   LCD_ShowStrExCompact：后者对每个字符都先判 "col + 12 > LCD_W"，
-         *   一旦成立就把 col 归零、page += 2 —— 单位靠右时起始列必然大于 116，
-         *   正好触发该条件，于是单位会被甩到 page 4+2=6、即大行4 的左侧，
-         *   把传感器标签盖掉（实测渲染帧确认过）。
-         *   单字符绘制没有这套换行逻辑，落点才是我们算出来的那一列。 */
+        /* 单位：只画裸单位（m / ft），右缘对齐读数的【墨迹】右缘；servUnit 越界时按 m 处理。
+         * ⚠ 必须逐字符调用 LCD_ShowCharCompact，不可用 LCD_ShowStrExCompact：后者对每字符
+         *   先判 "col + 12 > LCD_W"，成立即 col=0、page+=2 —— 单位靠右时起始列 >116 必中，
+         *   会被甩到大行4 左侧盖掉传感器标签。 */
         const char *unitStr = (gRadarParam.servUnit == 1u) ? "ft" : "m";
         uint16_t unW = LCD_GetStrExWidth(unitStr);
         /* bigW 是推进量（每字符都含 2 列字距），末字墨迹右缘在 bigCol+bigW-2；
@@ -1052,34 +1080,24 @@ static void UI_RenderHome(void)
         for (const char *p = unitStr; *p != '\0'; p++)
             unCol = (uint8_t)(unCol + LCD_ShowCharCompact(unCol, 4, (uint8_t)*p));
 
-        /* 传感器标签：大行4，左缘与读数区左缘齐平（即让开左侧预留条）。
-         * sensorTag 由主板 PARAM_DUMP 下发（16 字节，反序列化时已补 '\0'），
-         * 默认 "SENSOR"。空串时整行留空，不画占位符。
-         * ★起始列用 COL_HOME_LEFT_RESERVE 而不是 0：左侧预留条要留成干净的
-         *   一整条（以后画物位标签/竖条），标签压进去会打架。
-         *   若确实要让标签回到最左列（预留条只管读数所在的大行），把下面的
-         *   COL_HOME_LEFT_RESERVE 换成 0 即可。 */
+        /* 传感器标签：大行4，sensorTag 由 PARAM_DUMP 下发（16 字节，已补 '\0'），空串则整行留空。
+         * ⚠ 起始列取 COL_HOME_LEFT_RESERVE 而非 0：预留条要留成干净的一整条，标签压进去会打架。 */
         if (gRadarParam.sensorTag[0] != '\0')
             LCD_ShowStrExCompact((uint8_t)COL_HOME_LEFT_RESERVE, 6,
                                  (uint8_t *)gRadarParam.sensorTag);
     }
     else
     {                                                                              //快捷键
-        /* 按 diagCurveSel 取【真正对应】的曲线缓冲。
-         * 原先无论如何都传 radar_echo，切到"虚假回波曲线"时标题变了、
-         * 画的却还是回波，是个会误导现场判断的假功能。*/
+        /* 按 diagCurveSel 取【真正对应】的曲线缓冲 */
         const uint8_t *curve = UI_GetSelectedCurve();
         uint8_t curveSel = gRadarParam.diagCurveSel;
-        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
+        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* 语言索引钳位 */
 
-        /* ★越界保护：diagCurveSel 存在 EEPROM，降级/换固件后可能残留
-         *   大于当前选项数的旧值，直接索引 dict_curve 会读到别的语言段。*/
+        /* ⚠ 越界保护：diagCurveSel 存 EEPROM，可能残留过大的旧值，直接索引 dict_curve 会读到别的语言段 */
         if (curveSel >= 3u) curveSel = 0u;
 
-        /* ★绘制顺序很重要：LCD_DrawEchoCurve() 内部会 memset(frame_buffer,0)
-         *   并整屏刷入（oled.c:613/722-730），因此它会把【之前】画的东西全部抹掉。
-         *   原来标题写在它之前 ⇒ 标题实际会被曲线覆盖掉（既有缺陷）。
-         *   故必须先画曲线，再画标题与数值。 */
+        /* ⚠ 必须先画曲线、再画标题与数值：LCD_DrawEchoCurve() 内部会 memset(frame_buffer,0)
+         *   并整屏刷入（见 oled.c），会把之前画的内容全部抹掉。 */
         if (curve != NULL)
             LCD_DrawEchoCurve((uint8_t *)curve, 1, 1);
         else
@@ -1087,31 +1105,19 @@ static void UI_RenderHome(void)
 
         LCD_ShowStrExCompact(0, 0, (uint8_t *)dict_curve[lang * 3 + curveSel]);
 
-        /* 右上角页码 "3-4" —— 保留硬编码。
-         *
-         * ★为什么必须硬编码，而不是动态算（推翻 §3.8 初版做法，特此纠正）：
-         *  ① 语义：曲线视图 = 「诊断(第3组) → 选择曲线(第3项) → 曲线显示(第4项)」
-         *     这个固定入口的画面，页码与导航栈无关。
-         *  ② 动态算会算错：Get_Menu_Code_String() 依赖 curPage/curIndex/navDepth，
-         *     而退出到首页时【这三者都不复位】——K3 从浏览态返回只写
-         *     gUIState = UI_HOME（oled_ui.c:1229），curPage 仍是上次的菜单页。
-         *     ⇒ 在 UI_HOME 下调它，得到的是"用户上次逛到哪"的残留页码
-         *        （如 "1" 或 "4-1"），与曲线页毫无关系。
-         *  ③ 该行横向已被曲线名占满：dict_curve 是 12x12 汉字，中文
-         *     "虚假回波曲线"/"输出走势曲线" 宽 72 列（占 0..71）。硬编码
-         *     "3-4" 宽 18 列、起点 110 列，恰好落在曲线名右侧空白区。
-         *  ④ 职责划分：曲线视图是【只读展示窗】——显示哪条曲线、叫什么名字，
-         *     全由菜单（诊断页"选择曲线"项）决定，首页不产生数据、不做选择。
-         *     "显示实时距离"是【首页正常视图】的职责，那一视图已实现
-         *     （"%.3f m" + P:/M:），此处不重复。
-         *  ⑤ 三条曲线（回波/虚假回波/输出走势）同属这一个页面，只是数据源不同
-         *     ⇒ 无需为每条曲线硬编码不同的右上角内容，统一显示页码即可。
-         *  ⑥ 曲线自带 Y 轴标度（"0.01"/"m(d)"/"8.91"，oled.c:733-735），
-         *     量程语义已由曲线给出。 */
+        /* 右上角页码 "3-4" 保留硬编码（曲线视图 = 诊断→选择曲线→曲线显示 的固定入口）。
+         * ⚠ 不可改为动态计算：Get_Menu_Code_String() 依赖 curPage/curIndex/navDepth，而退出到
+         *   首页时这三者都不复位（K3 从浏览态返回只置 gUIState = UI_HOME），算出来是上次
+         *   逛到哪的残留页码，与曲线页无关。 */
         LCD_ShowStr_Small(110, 0, "3-4");
     }
 }
 
+/**
+ * @brief  画菜单列表页（根菜单或子菜单），左侧箭头指示当前项
+ * @param  codeBuf 右上角菜单编号
+ * @retval 无
+ */
 static void UI_RenderMenuList(const char *codeBuf)
 {
     LCD_ShowStr_Small(128 - strlen(codeBuf) * 6, 0, codeBuf);
@@ -1142,6 +1148,11 @@ static void UI_RenderMenuList(const char *codeBuf)
     }
 }
 
+/**
+ * @brief  画参数详情页（标题 + 编号 + 值 + 特殊页处理 + 编辑光标）
+ * @param  codeBuf 右上角菜单编号
+ * @retval 无
+ */
 static void UI_RenderParamItem(const char *codeBuf)
 {
     MenuItem *item = &curPage->items[curIndex];
@@ -1155,9 +1166,8 @@ static void UI_RenderParamItem(const char *codeBuf)
     // --- 特殊: 基本设置页显示当前物料性质记忆值 ---
     if (curPage == &Page_Basic && item->subPage == &Page_Mat)
     {
-        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
-        /* matType 同样存在 EEPROM，可能残留越界值；dict_mat 每语言 3 档，
-         * 不钳位则跨语言段读出错误文本（最坏越出数组末尾）。 */
+        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* 语言索引钳位 */
+        /* ⚠ matType 存 EEPROM，可能残留越界值；dict_mat 每语言 3 档，不钳位会跨语言段读出错误文本。 */
         uint8_t mt = (gRadarParam.matType > 2u) ? 2u : gRadarParam.matType;
         const char *matName = dict_mat[lang * 3 + mt];
         LCD_ShowStrExCompact(30, 2, (uint8_t *)matName);
@@ -1191,7 +1201,7 @@ static void UI_RenderParamItem(const char *codeBuf)
     {
         LCD_ClearLine(0);
 		LCD_ClearLine(1);
-        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
+        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* 语言索引钳位 */
         const char *dynamicName = dict_curve[lang * 3 + gRadarParam.diagCurveSel];
         LCD_ShowStrExCompact(0, 0, (uint8_t *)dynamicName);
         LCD_ShowStr_Small(128 - strlen(codeBuf) * 6, 0, codeBuf);
@@ -1230,7 +1240,7 @@ static void UI_RenderParamItem(const char *codeBuf)
     if (gUIState == UI_EDIT && item->type == MENU_SELECT)
     {
         uint8_t col = 0, row = 0;
-        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* M1: 语言索引钳位 */
+        uint8_t lang = gRadarParam.servLang; if (lang > 3u) lang = 0u;   /* 语言索引钳位 */
         for (uint8_t i = 0; i < item->optionNum; i++)
         {
             uint8_t x = (col == 0) ? 10 : 72;
@@ -1247,6 +1257,11 @@ static void UI_RenderParamItem(const char *codeBuf)
     }
 }
 
+/**
+ * @brief  按页类型分派浏览态渲染
+ * @param  codeBuf 右上角菜单编号
+ * @retval 无
+ */
 static void UI_RenderBrowse(const char *codeBuf)
 {
     if (curPage->type == PAGE_TYPE_ROOT || curPage->type == PAGE_TYPE_MENU)
@@ -1259,6 +1274,11 @@ static void UI_RenderBrowse(const char *codeBuf)
     }
 }
 
+/**
+ * @brief  按键总入口：按当前状态机分派（0=K3 返回、1=K4 上、2=K5 循环、3=K6 确认）
+ * @param  key 按键码
+ * @retval 无
+ */
 static void UI_ProcessKey(uint8_t key)
 {
     if (gUIState == UI_HOME)
@@ -1384,19 +1404,16 @@ void UI_KeyK4_Up(void)    { UI_ProcessKey(1); }
 void UI_KeyK5_Loop(void)  { UI_ProcessKey(2); }
 void UI_KeyK6_Enter(void) { UI_ProcessKey(3); }
 
-/* 主循环侧：重算走势 Y 轴自适应范围（原先由 UI_UpdateMeas 在接收中断里做）。
- * ★由 UI_Task() 每轮【先】调用一次，保证返回后 s_hist_min/s_hist_max 已是
- *   当前历史的最新值 —— 随后 UI_RenderHome()/UI_GetSelectedCurve() 读到的
- *   范围与曲线才一致。
- * 无新采样时（s_histRangeDirty == 0）直接返回，只花一次判断。
- *
- * 并发说明：本函数在主循环执行，读 s_hist_dist[0 .. s_hist_valid)；接收中断
- * 仍会往 s_hist_head（"下一个写入位置"）写新点 —— 该下标要么在本次读取范围
- * 之外（增长阶段，s_hist_head == s_hist_valid），要么是已回绕的旧槽位。
- * float 的 32 位对齐读写不会撕裂，最坏是某槽位读到"上一帧的旧值"，
- * 对 min/max 无实质影响，且下一轮即被纠正。 */
+/**
+ * @brief  重算走势 Y 轴自适应范围（s_hist_min / s_hist_max）
+ * @retval 无
+ */
 static void UI_RefreshTrendRange(void)
 {
+    /* ⚠ 必须由 UI_Task() 每轮【先】调用，保证返回后 s_hist_min/s_hist_max 是最新值 ——
+     *   随后 UI_RenderHome()/UI_GetSelectedCurve() 读到的范围与曲线才一致。
+     * 并发：接收中断仍会写 s_hist_head，该下标要么在读取范围外、要么是已回绕的旧槽位；
+     *   32 位对齐读写不撕裂，最坏读到上一帧旧值，下轮纠正。 */
     uint8_t n, k;
 
     if (s_histRangeDirty == 0u) return;
@@ -1414,9 +1431,90 @@ static void UI_RefreshTrendRange(void)
     }
 }
 
+/* ============================================================
+ * 写参数 ACK（0x07）结果提示
+ *
+ * 确认键只代表"帧发出去了"；主板 EEPROM 写失败、id 被拒、线路丢帧时界面原本仍显示新值，
+ * 断电后却回退。有了 ACK 才谈得上双方都知道。实现上不新增页面，只在屏幕最底行（page 7）
+ * 覆盖一行小字，1.5s 自动消失，每次全屏重绘后再补画一次，因此 MEAS 刷新不会把它吃掉。
+ * ⚠ 文案用 ASCII：gLangTable 没有这几个条目，本地化需另补 4 种语言的枚举与字串。
+ * ============================================================ */
+#define ACK_TOAST_MS  1500u
+
+static uint8_t  s_ack_toast_kind = 0u;    /* 0=不显示 1=成功 2=主板回失败 3=无应答 */
+static uint32_t s_ack_toast_end  = 0u;    /* 到期时刻（HAL_GetTick 基准） */
+
+/**
+ * @brief  把 ACK 结果画在屏幕底行；已过期则清状态并请求整屏重绘
+ * @retval 无
+ */
+static void UI_DrawAckToast(void)
+{
+    /* ⚠ 调用点放在每次 LCD_FullFill() + 渲染【之后】，这样它是最后绘制的、不会被版面覆盖 */
+    const char *msg;
+
+    if (s_ack_toast_kind == 0u) return;
+
+    if ((int32_t)(HAL_GetTick() - s_ack_toast_end) >= 0)
+    {
+        s_ack_toast_kind = 0u;
+        /* ⚠ 只清黑会在底行留下永久空白（原来那行内容已被 toast 覆盖掉）：
+         *   置 uiDirty 让下一轮完整重绘把它补回来。toast_kind 已清 0，不会来回重绘。 */
+        uiDirty = 1;
+        return;
+    }
+
+    if (s_ack_toast_kind == 1u)      msg = "SAVED OK";
+    else if (s_ack_toast_kind == 3u) msg = "NO REPLY";
+    else                             msg = "SAVE FAIL";
+
+    LCD_FillBlock(0, 7, LCD_W, 1, 0x00);
+    LCD_ShowStr_Small(2, 7, msg);
+}
+
+/**
+ * @brief  回波曲线 X 轴右端刻度随量程设定刷新（仅在值变化时做一次浮点格式化）
+ * @retval 无
+ */
+static void UI_UpdateCurveAxisLabel(void)
+{
+    /* ⚠ 由 UI_Task() 在主循环调用，不可放进 USART1 接收中断：snprintf("%f") 耗时远超 173.6µs 失聪窗口
+     * rangeSetting<=0 / NaN 表示主板按当前采样档位的物理量程工作，显示 "0.0" */
+    static float s_last_range = -1.0f;
+    float r = gRadarParam.rangeSetting;
+    char buf[8];
+
+    if (r == s_last_range) return;      /* 值未变：复用已写入的标签，零开销 */
+    s_last_range = r;
+
+    if (r > 0.0f && r < 1000.0f)
+        snprintf(buf, sizeof(buf), "%.1f", r);
+    else
+        strcpy(buf, "0.0");             /* 纯数字：F6x8 字模不含大写字母，勿用 "Auto" */
+    LCD_SetCurveXEndLabel(buf);
+}
+
+/**
+ * @brief  主循环任务：取 ACK 事件、按脏标记重绘（含曲线与覆盖层）
+ * @retval 无
+ */
 void UI_Task(void)
 {
-    UI_RefreshTrendRange();   /* ★先重算 Y 轴范围（原在接收中断里做，见函数注释） */
+    UI_UpdateCurveAxisLabel();        /* 量程变了才更新 X 轴右端刻度 */
+    UI_RefreshTrendRange();   /* 先重算 Y 轴范围（原在接收中断里做，见 s_histRangeDirty） */
+
+    /* 取走 ACK 结果事件（读取即清，避免每次重绘重复触发） */
+    if (Disp_SendTakeParamAckEvent())
+    {
+        uint8_t st  = Disp_SendParamAckState();
+        uint8_t res = Disp_SendParamAckResult();
+        if (st == DISP_ACK_STATE_OK)            s_ack_toast_kind = 1u;
+        else if (res == 0xFFu)                  s_ack_toast_kind = 3u;   /* 0xFF = 主板无应答 */
+        else                                    s_ack_toast_kind = 2u;
+        s_ack_toast_end = HAL_GetTick() + ACK_TOAST_MS;
+        uiDirty = 1;
+    }
+
     if (!uiDirty) return;
     uiDirty = 0;
     LCD_FullFill(0x00);
@@ -1424,6 +1522,7 @@ void UI_Task(void)
     if (gUIState == UI_HOME)
     {
         UI_RenderHome();
+        UI_DrawAckToast();      /* ⚠ 必须在渲染之后：它是覆盖层 */
         return;
     }
 
@@ -1438,8 +1537,13 @@ void UI_Task(void)
     }
 
     UI_RenderBrowse(codeBuf);
+    UI_DrawAckToast();          /* ⚠ 必须在渲染之后：它是覆盖层 */
 }
 
+/**
+ * @brief  初始化 UI：置默认数据模型并初始化屏幕
+ * @retval 无
+ */
 void UI_Init(void)
 {
     strcpy(gRadarParam.sensorTag, "SENSOR");
@@ -1451,34 +1555,33 @@ void UI_Init(void)
 }
 
 /* ============================================================
- * 协议数据更新接口（APP/app_disp.c 调用）
- * 写入数据模型并置 uiDirty=1 触发重绘。
- * 字段映射为“预留”，用户可据实际显示需求细化。
- *
- * ★调用上下文（2026-09-22 起必须遵守）：本组函数由 app_disp.c 的帧处理链
- *   调用，而该链运行在 USART1 接收中断里 ⇒ 【本组函数的耗时 = 串口接收
- *   失聪窗口】。115200 8N1 下必须远小于 2 字节时间（173.6µs）。因此：
- *     · 只允许 O(1) 赋值与小拷贝（实测各函数 0.7~7.5µs，见注释）；
- *     · 任何 O(n) 运算必须改为"中断里只置标志，主循环里再算"，
- *       范例见 s_histRangeDirty / UI_RefreshTrendRange()。
+ * 协议数据更新接口（app_disp.c 调用）：写入数据模型并置 uiDirty=1 触发重绘。
+ * ⚠ 本组函数运行在 USART1 接收中断里 ⇒ 耗时 = 串口接收失聪窗口，只允许 O(1)
+ *   赋值与小拷贝；任何 O(n) 运算必须改为"中断里置标志，主循环里再算"
+ *   （范例：s_histRangeDirty / UI_RefreshTrendRange()）。
  * ============================================================ */
+/**
+ * @brief  写入 MEAS 测量结果，并把有效距离记入走势历史
+ * @param  distance   实时距离(m)
+ * @param  peak_count 峰值数（0 = 本轮无峰）
+ * @param  mode       TOF/标定模式
+ * @retval 无
+ */
 void UI_UpdateMeas(float distance, uint8_t peak_count, uint8_t mode)
 {
     __disable_irq();
     gRadarParam.realTimeDistance = distance;
     gRadarParam.measPeakCount = peak_count;   /* 测量状态，不污染配置字段 currMin */
     gRadarParam.measMode      = mode;         /* 测量状态，不污染配置字段 currMode */
+    /* MEAS 的 position / delta_amp 已解析但未接入（预留）：
+     *   position = 峰的亚采样下标（波形标峰值用），delta_amp = 峰处差分幅度（诊断信号强度用） */
 
     /* 输出走势历史：每收到一帧 MEAS 记一个距离点。
-     * ★只在峰值数 > 0（本轮确实测到回波）时记录。无效测量会被主板下发的
-     *   故障处理接管，若把无效轮次的 distance=0 也记进去，走势曲线会周期性
-     *   砸到底部，看起来像液位反复归零——是失真而非真实趋势。
-     * 归档模式下凑满 128 点即停止推进（保留这一段固定记录），
-     * 滚动模式下持续覆盖最旧点。 */
+     * ⚠ 只在 peak_count > 0（本轮确实测到回波）时记录：把无效轮次的 distance=0 也记进去，
+     *   走势曲线会周期性砸到底部、像液位反复归零（失真）。 */
     if (peak_count > 0u && distance > 0.0f)
     {
-        /* 归档模式（gTrendSwitchArchived，内部行为开关，非对外菜单项）
-         * 下凑满 128 点即冻结，保留这一段固定记录。 */
+        /* 归档模式（gTrendSwitchArchived）下凑满 128 点即冻结 */
         if (!(gTrendSwitchArchived == 1u && s_hist_valid >= CURVE_HIST_LEN))
         {
             s_hist_dist[s_hist_head] = distance;
@@ -1486,12 +1589,9 @@ void UI_UpdateMeas(float distance, uint8_t peak_count, uint8_t mode)
             if (s_hist_valid < CURVE_HIST_LEN)
                 s_hist_valid++;
 
-            /* Y 轴自适应范围的重算【不在这里做】：
-             * 它是最坏 127 次软浮点比较的 O(n) 操作，放在接收中断链路上
-             * 会把中断关窗拖到 200µs 以上，超过 115200 下的 2 字节时间
-             * （173.6µs）⇒ UART 溢出（ORE）⇒ 接收永久停摆。
-             * 这里只置位请求标志（O(1)），实际扫描交给主循环
-             * UI_Task() → UI_RefreshTrendRange()，历史数据本身不受影响。 */
+            /* ⚠ Y 轴范围重算【不在这里做】：那是最坏 127 次软浮点比较的 O(n) 操作，
+             *   放在接收中断链路上会把关窗拖过 173.6µs ⇒ 溢出(ORE) ⇒ 接收永久停摆。
+             *   这里只置位请求标志（O(1)），扫描交给 UI_Task() → UI_RefreshTrendRange()。 */
             s_histRangeDirty = 1u;
         }
     }
@@ -1500,6 +1600,15 @@ void UI_UpdateMeas(float distance, uint8_t peak_count, uint8_t mode)
     __enable_irq();
 }
 
+/**
+ * @brief  写入 DIAG 诊断帧内容
+ * @param  reliability  可靠度 0~100
+ * @param  status       状态位
+ * @param  peakMinEmpty 空罐最小峰值
+ * @param  peakMaxEmpty 空罐最大峰值
+ * @param  temperature  传感器温度(℃)
+ * @retval 无
+ */
 void UI_UpdateDiag(uint8_t reliability, uint8_t status, float peakMinEmpty, float peakMaxEmpty, float temperature)
 {
     __disable_irq();
@@ -1512,10 +1621,15 @@ void UI_UpdateDiag(uint8_t reliability, uint8_t status, float peakMinEmpty, floa
     __enable_irq();
 }
 
-/* PARAM_DUMP 全量配置反序列化：按 dispproto.h 定义的 81 字节布局逐字段写入 gRadarParam。
- * 仅写配置字段，不动实时测量字段（realTimeDistance/measPeakCount/measMode）。 */
+/**
+ * @brief  PARAM_DUMP 全量配置反序列化，写入 gRadarParam 的配置字段
+ * @param  payload 负载（按 dispproto.h 的 81 字节布局）
+ * @param  len     负载字节数（<81 直接返回）
+ * @retval 无
+ */
 void UI_UpdateParamDump(const uint8_t *payload, uint8_t len)
 {
+    /* 仅写配置字段，不动实时测量字段（realTimeDistance/measPeakCount/measMode） */
     if (payload == 0 || len < 81u) return;
 
     __disable_irq();
@@ -1556,6 +1670,12 @@ void UI_UpdateParamDump(const uint8_t *payload, uint8_t len)
     __enable_irq();
 }
 
+/**
+ * @brief  写入回波曲线（0x02 ECHO）
+ * @param  echo 128 字节包络
+ * @param  len  负载字节数（>128 截断）
+ * @retval 无
+ */
 void UI_UpdateEcho(const uint8_t *echo, uint8_t len)
 {
     uint8_t n = (len > 128u) ? 128u : len;
@@ -1568,6 +1688,13 @@ void UI_UpdateEcho(const uint8_t *echo, uint8_t len)
     }
 }
 
+/**
+ * @brief  按曲线类型写入对应缓冲（0x06 ECHO_TYPED）
+ * @param  curveType 曲线类型（DISP_CURVE_*）
+ * @param  data      128 字节曲线数据
+ * @param  len       负载字节数（>128 截断）
+ * @retval 无
+ */
 void UI_UpdateEchoTyped(uint8_t curveType, const uint8_t *data, uint8_t len)
 {
     uint8_t n = (len > 128u) ? 128u : len;
@@ -1588,9 +1715,11 @@ void UI_UpdateEchoTyped(uint8_t curveType, const uint8_t *data, uint8_t len)
     __enable_irq();
 }
 
-/* 把历史序列按统一的 0~255 标度铺进 128 点渲染缓冲。
- * 归档模式下未写满的部分不推进（保持尾部持平），滚动模式下按数据量铺满。
- * Y 轴用 s_hist_min/s_hist_max 自适应，避免量程固定导致曲线贴边看不出趋势。 */
+/**
+ * @brief  把距离历史按 0~255 标度铺进 128 点渲染缓冲（Y 轴用 s_hist_min/max 自适应）
+ * @param  out128 输出缓冲（128 字节）
+ * @retval 无
+ */
 static void Trend_BuildRenderBuffer(uint8_t *out128)
 {
     uint8_t n = s_hist_valid;
@@ -1614,6 +1743,10 @@ static void Trend_BuildRenderBuffer(uint8_t *out128)
         out128[i] = (n > 0u) ? out128[n - 1u] : 0u;
 }
 
+/**
+ * @brief  取当前 diagCurveSel 对应的曲线数据指针
+ * @retval 128 点 0~255 标度缓冲；无对应曲线返回 0
+ */
 const uint8_t *UI_GetSelectedCurve(void)
 {
     switch (gRadarParam.diagCurveSel)
@@ -1628,6 +1761,10 @@ const uint8_t *UI_GetSelectedCurve(void)
     }
 }
 
+/**
+ * @brief  查询输出走势曲线已累积的有效点数
+ * @retval 0~128
+ */
 uint8_t UI_GetTrendPointCount(void)
 {
     return s_hist_valid;

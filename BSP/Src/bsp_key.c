@@ -1,24 +1,9 @@
-/* 按键 GPIO 引脚仍在 CubeMX 生成的 MX_GPIO_Init() 中初始化，
- * 本文件负责 EXTI 中断登记与主循环非阻塞消抖。
- *
- * ★EXTI 触发边沿契约（2026-09-21 核对）：
- *   state 的唯一写入路径是"EXTI 触发 → 消抖窗口后回读电平"，因此 state 想从 1
- *   回到 0，就要求【松开】时也产生一次 EXTI。
- *   => gpio.c 的按键必须配成双边沿 GPIO_MODE_IT_RISING_FALLING。
- *   若改成仅下降沿：按下仍能正常触发 Key_GetPressed()（当前业务不受影响），
- *      但松开不产生 EXTI，state 会长期卡在 1，Key_GetState() 失去"实时电平"语义。
- *   核对记录：rp_disp.ioc 原本写成 GPIO_MODE_IT_FALLING，与 gpio.c 的
- *      RISING_FALLING 不一致，已同步为双边沿。日后在 CubeMX 里重新生成代码前，
- *      请确认本契约仍成立（对应 rp_disp.ioc 的 PB8~PB12.GPIO_ModeDefaultEXTI）。
- *
- * 非阻塞消抖策略：
- *   - EXTI 回调只记录触发的引脚编号与时间戳，不做任何延时或采样；
- *   - Key_Task() 在主循环中轮询，距最近一次 EXTI 触发超过 KEY_DEBOUNCE_MS 后，
- *     重新读取 GPIO 电平确认稳定状态，并置位 pressed 事件标志。
- */
+/* 按键驱动 (STM32F1 显示板)：EXTI 中断只记引脚与时刻，消抖与采样在 Key_Task()
+ * ⚠ 按键须配双边沿 GPIO_MODE_IT_RISING_FALLING（gpio.c）：改单下降沿则松开不产生 EXTI，
+ *   state 长期卡在 1，Key_GetState() 失去实时电平语义。 */
 #include "bsp_key.h"
-#include "gpio.h"   /* KEY3_Pin / KEY3_GPIO_Port 等 CubeMX 生成宏 */
-#include "stm32f1xx_hal.h"   /* HAL_GetTick */
+#include "gpio.h"
+#include "stm32f1xx_hal.h"
 
 typedef struct {
     uint8_t  state;       /* 当前稳定电平（按下=1） */
@@ -29,7 +14,11 @@ typedef struct {
 
 static KeyStatusTypeDef key_status[4] = {0};
 
-/* EXTI 触发的引脚 -> key_status 索引映射 */
+/**
+ * @brief  把 EXTI 引脚号映射为 key_status 索引
+ * @param  GPIO_Pin 引脚掩码（KEY3~KEY6_Pin）
+ * @retval 0~3；非按键引脚返回 -1
+ */
 static int8_t Key_IndexByPin(uint16_t GPIO_Pin)
 {
     switch (GPIO_Pin)
@@ -42,6 +31,11 @@ static int8_t Key_IndexByPin(uint16_t GPIO_Pin)
     }
 }
 
+/**
+ * @brief  EXTI 回调（中断上下文）：登记待消抖按键并记下触发时刻
+ * @param  GPIO_Pin 触发中断的引脚掩码
+ * @retval 无
+ */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     int8_t idx = Key_IndexByPin(GPIO_Pin);
@@ -50,11 +44,13 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         key_status[idx].pending      = 1U;
         key_status[idx].trigger_tick = HAL_GetTick();
     }
-    /* 清除对应 EXTI 挂起位 */
     __HAL_GPIO_EXTI_CLEAR_IT(GPIO_Pin);
 }
 
-/* 主循环调用：对处于 pending 状态的按键，待消抖窗口过后采样确认。 */
+/**
+ * @brief  主循环轮询：pending 按键过消抖窗后回读 GPIO 确认，产生按下事件
+ * @retval 无
+ */
 void Key_Task(void)
 {
     uint32_t now = HAL_GetTick();
@@ -75,12 +71,17 @@ void Key_Task(void)
             }
             uint8_t st = (HAL_GPIO_ReadPin(port, pin) == GPIO_PIN_RESET) ? 1U : 0U;
             key_status[i].state   = st;
-            key_status[i].pressed = st;   /* 仅在确认按下时产生事件 */
+            key_status[i].pressed = st;   /* 仅确认按下时产生事件 */
             key_status[i].pending = 0U;
         }
     }
 }
 
+/**
+ * @brief  取走一次性"按下"事件
+ * @param  key_index 按键索引 0~3
+ * @retval 1=本帧有按下事件（读后清零），0=无
+ */
 uint8_t Key_GetPressed(uint8_t key_index)
 {
     if (key_index >= 4) return 0;
@@ -92,12 +93,22 @@ uint8_t Key_GetPressed(uint8_t key_index)
     return 0;
 }
 
+/**
+ * @brief  查询按键当前稳定电平（不消费事件）
+ * @param  key_index 按键索引 0~3
+ * @retval 1=按下，0=松开或索引越界
+ */
 uint8_t Key_GetState(uint8_t key_index)
 {
     if (key_index >= 4) return 0;
     return key_status[key_index].state;
 }
 
+/**
+ * @brief  强制清除按键稳定电平（不产生事件）
+ * @param  key_index 按键索引 0~3
+ * @retval 无
+ */
 void Key_Release(uint8_t key_index)
 {
     if (key_index >= 4) return;
