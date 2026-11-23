@@ -119,8 +119,28 @@
       <TargetDriverDllRegistry>
         <SetRegEntry>
           <Number>0</Number>
+<<<<<<< HEAD
           <Key>JL2CM3</Key>
           <Name>-U69405154 -O78 -S2 -ZTIFSpeedSel5000 -A0 -C0 -JU1 -JI127.0.0.1 -JP0 -RST0 -N00("ARM CoreSight SW-DP") -D00(1BA01477) -L00(0) -TO18 -TC10000000 -TP21 -TDS8007 -TDT0 -TDC1F -TIEFFFFFFFF -TIP8 -TB1 -TFE0 -FO7 -FD20000000 -FC1000 -FN1 -FF0STM32F10x_128.FLM -FS08000000 -FL020000 -FP0($$Device:STM32F103CB$Flash\STM32F10x_128.FLM)</Name>
+=======
+          <Key>ARMRTXEVENTFLAGS</Key>
+          <Name>-L70 -Z18 -C0 -M0 -T1</Name>
+        </SetRegEntry>
+        <SetRegEntry>
+          <Number>0</Number>
+          <Key>DLGTARM</Key>
+          <Name>(1010=-1,-1,-1,-1,0)(1007=-1,-1,-1,-1,0)(1008=-1,-1,-1,-1,0)(1009=-1,-1,-1,-1,0)</Name>
+        </SetRegEntry>
+        <SetRegEntry>
+          <Number>0</Number>
+          <Key>ARMDBGFLAGS</Key>
+          <Name></Name>
+        </SetRegEntry>
+        <SetRegEntry>
+          <Number>0</Number>
+          <Key>JL2CM3</Key>
+          <Name>-U69405154 -O78 -S2 -ZTIFSpeedSel5000 -A0 -C0 -JU1 -JI127.0.0.1 -JP0 -RST0 -N00("ARM CoreSight SW-DP") -D00(1BA01477) -L00(0) -TO18 -TC10000000 -TP21 -TDS8007 -TDT0 -TDC1F -TIEFFFFFFFF -TIP8 -TB1 -TFE0 -FO15 -FD20000000 -FC1000 -FN1 -FF0STM32F10x_128.FLM -FS08000000 -FL020000 -FP0($$Device:STM32F103CB$Flash\STM32F10x_128.FLM)</Name>
+>>>>>>> origin/develop
         </SetRegEntry>
         <SetRegEntry>
           <Number>0</Number>
@@ -128,19 +148,48 @@
           <Name>UL2CM3(-S0 -C0 -P0 -FD20000000 -FC1000 -FN1 -FF0STM32F10x_128 -FS08000000 -FL020000 -FP0($$Device:STM32F103CB$Flash\STM32F10x_128.FLM))</Name>
         </SetRegEntry>
       </TargetDriverDllRegistry>
+<<<<<<< HEAD
       <Breakpoint/>
+=======
+      <Breakpoint>
+        <Bp>
+          <Number>0</Number>
+          <Type>0</Type>
+          <LineNumber>117</LineNumber>
+          <EnabledFlag>1</EnabledFlag>
+          <Address>134257772</Address>
+          <ByteObject>0</ByteObject>
+          <HtxType>0</HtxType>
+          <ManyObjects>0</ManyObjects>
+          <SizeOfObject>0</SizeOfObject>
+          <BreakByAccess>0</BreakByAccess>
+          <BreakIfRCount>50</BreakIfRCount>
+          <Filename>G:\WORK\Radar_position\杞欢\workbuddy\radar_position_display - 鍓湰\Core\Src\main.c</Filename>
+          <ExecCommand></ExecCommand>
+          <Expression>\\rp_disp\../Core/Src/main.c\117</Expression>
+        </Bp>
+      </Breakpoint>
+>>>>>>> origin/develop
       <Tracepoint>
         <THDelay>0</THDelay>
       </Tracepoint>
       <DebugFlag>
         <trace>0</trace>
         <periodic>0</periodic>
+<<<<<<< HEAD
         <aLwin>0</aLwin>
+=======
+        <aLwin>1</aLwin>
+>>>>>>> origin/develop
         <aCover>0</aCover>
         <aSer1>0</aSer1>
         <aSer2>0</aSer2>
         <aPa>0</aPa>
+<<<<<<< HEAD
         <viewmode>0</viewmode>
+=======
+        <viewmode>1</viewmode>
+>>>>>>> origin/develop
         <vrSel>0</vrSel>
         <aSym>0</aSym>
         <aTbox>0</aTbox>
@@ -203,7 +252,11 @@
 
   <Group>
     <GroupName>Application/User/Core</GroupName>
+<<<<<<< HEAD
     <tvExp>0</tvExp>
+=======
+    <tvExp>1</tvExp>
+>>>>>>> origin/develop
     <tvExpOptDlg>0</tvExpOptDlg>
     <cbSel>0</cbSel>
     <RteFlg>0</RteFlg>
@@ -250,6 +303,21 @@
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
+<<<<<<< HEAD
+=======
+      <PathWithFileName>../Core/Src/tim.c</PathWithFileName>
+      <FilenameWithoutPath>tim.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>2</GroupNumber>
+      <FileNumber>6</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <bDave2>0</bDave2>
+>>>>>>> origin/develop
       <PathWithFileName>../Core/Src/usart.c</PathWithFileName>
       <FilenameWithoutPath>usart.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
@@ -257,7 +325,11 @@
     </File>
     <File>
       <GroupNumber>2</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>6</FileNumber>
+=======
+      <FileNumber>7</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -269,7 +341,11 @@
     </File>
     <File>
       <GroupNumber>2</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>7</FileNumber>
+=======
+      <FileNumber>8</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -289,7 +365,11 @@
     <RteFlg>0</RteFlg>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>8</FileNumber>
+=======
+      <FileNumber>9</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -301,7 +381,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>9</FileNumber>
+=======
+      <FileNumber>10</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -313,7 +397,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>10</FileNumber>
+=======
+      <FileNumber>11</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -325,7 +413,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>11</FileNumber>
+=======
+      <FileNumber>12</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -337,7 +429,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>12</FileNumber>
+=======
+      <FileNumber>13</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -349,7 +445,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>13</FileNumber>
+=======
+      <FileNumber>14</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -361,7 +461,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>14</FileNumber>
+=======
+      <FileNumber>15</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -373,7 +477,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>15</FileNumber>
+=======
+      <FileNumber>16</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -385,7 +493,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>16</FileNumber>
+=======
+      <FileNumber>17</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -397,7 +509,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>17</FileNumber>
+=======
+      <FileNumber>18</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -409,7 +525,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>18</FileNumber>
+=======
+      <FileNumber>19</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -421,7 +541,11 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>19</FileNumber>
+=======
+      <FileNumber>20</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -433,7 +557,35 @@
     </File>
     <File>
       <GroupNumber>3</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>20</FileNumber>
+=======
+      <FileNumber>21</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <bDave2>0</bDave2>
+      <PathWithFileName>../Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_tim.c</PathWithFileName>
+      <FilenameWithoutPath>stm32f1xx_hal_tim.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>3</GroupNumber>
+      <FileNumber>22</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <bDave2>0</bDave2>
+      <PathWithFileName>../Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_tim_ex.c</PathWithFileName>
+      <FilenameWithoutPath>stm32f1xx_hal_tim_ex.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>3</GroupNumber>
+      <FileNumber>23</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -453,7 +605,11 @@
     <RteFlg>0</RteFlg>
     <File>
       <GroupNumber>4</GroupNumber>
+<<<<<<< HEAD
       <FileNumber>21</FileNumber>
+=======
+      <FileNumber>24</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -466,6 +622,7 @@
   </Group>
 
   <Group>
+<<<<<<< HEAD
     <GroupName>Drivers/SYSTEM</GroupName>
     <tvExp>0</tvExp>
     <tvExpOptDlg>0</tvExpOptDlg>
@@ -486,14 +643,21 @@
   </Group>
 
   <Group>
+=======
+>>>>>>> origin/develop
     <GroupName>Hardware</GroupName>
     <tvExp>0</tvExp>
     <tvExpOptDlg>0</tvExpOptDlg>
     <cbSel>0</cbSel>
     <RteFlg>0</RteFlg>
     <File>
+<<<<<<< HEAD
       <GroupNumber>6</GroupNumber>
       <FileNumber>23</FileNumber>
+=======
+      <GroupNumber>5</GroupNumber>
+      <FileNumber>25</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -512,8 +676,13 @@
     <cbSel>0</cbSel>
     <RteFlg>0</RteFlg>
     <File>
+<<<<<<< HEAD
       <GroupNumber>7</GroupNumber>
       <FileNumber>24</FileNumber>
+=======
+      <GroupNumber>6</GroupNumber>
+      <FileNumber>26</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -524,8 +693,13 @@
       <bShared>0</bShared>
     </File>
     <File>
+<<<<<<< HEAD
       <GroupNumber>7</GroupNumber>
       <FileNumber>25</FileNumber>
+=======
+      <GroupNumber>6</GroupNumber>
+      <FileNumber>27</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -544,8 +718,13 @@
     <cbSel>0</cbSel>
     <RteFlg>0</RteFlg>
     <File>
+<<<<<<< HEAD
       <GroupNumber>8</GroupNumber>
       <FileNumber>26</FileNumber>
+=======
+      <GroupNumber>7</GroupNumber>
+      <FileNumber>28</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
@@ -556,8 +735,13 @@
       <bShared>0</bShared>
     </File>
     <File>
+<<<<<<< HEAD
       <GroupNumber>8</GroupNumber>
       <FileNumber>27</FileNumber>
+=======
+      <GroupNumber>7</GroupNumber>
+      <FileNumber>29</FileNumber>
+>>>>>>> origin/develop
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>

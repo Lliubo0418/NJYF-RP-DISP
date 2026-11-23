@@ -64,7 +64,11 @@
 /*#define HAL_SMARTCARD_MODULE_ENABLED   */
 #define HAL_SPI_MODULE_ENABLED
 /*#define HAL_SRAM_MODULE_ENABLED   */
+<<<<<<< HEAD
 /*#define HAL_TIM_MODULE_ENABLED   */
+=======
+#define HAL_TIM_MODULE_ENABLED
+>>>>>>> origin/develop
 #define HAL_UART_MODULE_ENABLED
 /*#define HAL_USART_MODULE_ENABLED   */
 /*#define HAL_WWDG_MODULE_ENABLED   */

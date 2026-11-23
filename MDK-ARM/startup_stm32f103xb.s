@@ -29,7 +29,11 @@
 ;   <o> Stack Size (in Bytes) <0x0-0xFFFFFFFF:8>
 ; </h>
 
+<<<<<<< HEAD
 Stack_Size		EQU     0x400
+=======
+Stack_Size		EQU     0x800
+>>>>>>> origin/develop
 
                 AREA    STACK, NOINIT, READWRITE, ALIGN=3
 Stack_Mem       SPACE   Stack_Size
