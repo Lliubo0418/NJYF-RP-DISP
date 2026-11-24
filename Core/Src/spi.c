@@ -32,8 +32,6 @@ void MX_SPI1_Init(void)
 
   /* USER CODE BEGIN SPI1_Init 0 */
 
-<<<<<<< HEAD
-=======
   /* ★SPI 速率契约（2026-09-21，为排查"LCD 点不亮"所做的 A/B 试验）
    *   DIV4  → PCLK2(72MHz)/4  = 18.0  MHz   原值；tSCYC 55.6ns/半周期 27.8ns
    *                                        （3.3V 档要求 ≥50/≥25ns，仅 11% 余量）
@@ -46,7 +44,6 @@ void MX_SPI1_Init(void)
    * 注意：此值同时写在 rp_disp.ioc 的 SPI1.BaudRatePrescaler，
    *   **两处必须一致**，否则下次 CubeMX 生成代码会被 .ioc 悄悄改回去。 */
 
->>>>>>> origin/develop
   /* USER CODE END SPI1_Init 0 */
 
   /* USER CODE BEGIN SPI1_Init 1 */
@@ -59,11 +56,7 @@ void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-<<<<<<< HEAD
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
-=======
   hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
->>>>>>> origin/develop
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;

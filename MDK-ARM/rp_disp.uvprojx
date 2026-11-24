@@ -314,11 +314,7 @@
           </ArmAdsMisc>
           <Cads>
             <interw>1</interw>
-<<<<<<< HEAD
-            <Optim>2</Optim>
-=======
             <Optim>0</Optim>
->>>>>>> origin/develop
             <oTime>0</oTime>
             <SplitLS>0</SplitLS>
             <OneElfS>1</OneElfS>
@@ -344,11 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xB</Define>
               <Undefine></Undefine>
-<<<<<<< HEAD
-              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Drivers/SYSTEM/delay;..\Hardware\Inc;..\APP\Inc;../BSP/Inc</IncludePath>
-=======
               <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;..\Hardware\Inc;..\APP\Inc;../BSP/Inc</IncludePath>
->>>>>>> origin/develop
             </VariousControls>
           </Cads>
           <Aads>
@@ -418,14 +410,11 @@
               <FilePath>../Core/Src/spi.c</FilePath>
             </File>
             <File>
-<<<<<<< HEAD
-=======
               <FileName>tim.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Core/Src/tim.c</FilePath>
             </File>
             <File>
->>>>>>> origin/develop
               <FileName>usart.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Core/Src/usart.c</FilePath>
@@ -506,8 +495,6 @@
               <FilePath>../Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_exti.c</FilePath>
             </File>
             <File>
-<<<<<<< HEAD
-=======
               <FileName>stm32f1xx_hal_tim.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_tim.c</FilePath>
@@ -518,7 +505,6 @@
               <FilePath>../Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_tim_ex.c</FilePath>
             </File>
             <File>
->>>>>>> origin/develop
               <FileName>stm32f1xx_hal_uart.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c</FilePath>
@@ -536,19 +522,6 @@
           </Files>
         </Group>
         <Group>
-<<<<<<< HEAD
-          <GroupName>Drivers/SYSTEM</GroupName>
-          <Files>
-            <File>
-              <FileName>delay.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Drivers\SYSTEM\delay\delay.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-=======
->>>>>>> origin/develop
           <GroupName>Hardware</GroupName>
           <Files>
             <File>

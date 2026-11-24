@@ -19,20 +19,13 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "spi.h"
-<<<<<<< HEAD
-=======
 #include "tim.h"
->>>>>>> origin/develop
 #include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "oled.h"
-<<<<<<< HEAD
-#include "delay.h"
-=======
->>>>>>> origin/develop
 #include "oledfont.h"
 #include "oled_ui.h"
 #include "bsp_key.h"
@@ -47,10 +40,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-<<<<<<< HEAD
-=======
 
->>>>>>> origin/develop
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -76,24 +66,13 @@ void SystemClock_Config(void);
 /* USER CODE END 0 */
 
 /**
-<<<<<<< HEAD
- * @brief  The application entry point.
- * @retval int
- */
-=======
   * @brief  The application entry point.
   * @retval int
   */
->>>>>>> origin/develop
 int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-<<<<<<< HEAD
-  uint8_t i;
-  uint8_t contrast = 40;
-=======
->>>>>>> origin/develop
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -116,22 +95,14 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI1_Init();
   MX_USART1_UART_Init();
-<<<<<<< HEAD
-  /* USER CODE BEGIN 2 */
-  // LCD_init();
-  UI_Init();
-  BSP_USART_Init();   /* 初始化 BSP 串口层（回调表） */
-  Disp_Init();        /* 注册 USART1 协议接收回调并启动接收 */
-=======
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   UI_Init();
-  BSP_USART_Init();   /* 初始化 BSP 串口层（回调表） */
+  BSP_USART_Init();   /* 初始化 BSP 串口层 */
   Disp_Init();        /* 注册 USART1 协议接收回调并启动接收 */
 
   HAL_TIM_Base_Start_IT(&htim3); 
 
->>>>>>> origin/develop
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -141,98 +112,45 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-<<<<<<< HEAD
-     UI_Task();
-=======
      Disp_SendAckPoll();  /* 写参数 ACK（0x07）超时重发与结果判定：非阻塞，必须每轮调用 */
      UI_Task();
      Key_Task();   /* 非阻塞消抖：主循环完成按键确认 */
->>>>>>> origin/develop
 
     /* 按键检测与处理 */
     if (Key_GetPressed(0)) // KEY3 - 返回键
     {
       UI_KeyK3_Back();
-<<<<<<< HEAD
-      // LCD_ShowBmp(bmp1);
-      // delay_ms(1000);
-=======
->>>>>>> origin/develop
     }
     if (Key_GetPressed(1)) // KEY4 - 上键/增加
     {
       UI_KeyK4_Up();
-<<<<<<< HEAD
-      // LCD_ShowBmp(bmp3);
-      // delay_ms(1000);
-=======
->>>>>>> origin/develop
     }
     if (Key_GetPressed(2)) // KEY5 - 循环键
     {
       UI_KeyK5_Loop();
-<<<<<<< HEAD
-      // for (i = (contrast - 5); i < (contrast + 5); i++)
-      // {
-      //   LCD_WR_REG(0x81);
-      //   LCD_WR_REG(0x3F & i);
-      //   LCD_ShowNum(2, 0, i);
-      //   delay_ms(1000);
-      // }
-      // LCD_WR_REG(0x81);
-      // LCD_WR_REG(contrast);
-      // LCD_ShowNum(2, 0, contrast);
-      // delay_ms(1000);
-=======
->>>>>>> origin/develop
     }
     if (Key_GetPressed(3)) // KEY6 - 确认键
     {
       UI_KeyK6_Enter();
-<<<<<<< HEAD
-      // LCD_ShowStr(0, 0, "CA12864I2Program");
-      // delay_ms(1000);
-      // LCD_ShowStr(0, 2, "SunSon ELEC-TECH");
-      // delay_ms(1000);
-      // LCD_ShowStr(0, 4, "TEL:755-29970110");
-      // delay_ms(1000);
-      // LCD_ShowStr(0, 6, "By LJ 2009.04.08");
-      // delay_ms(1000);
-    }
-
-    delay_ms(10);
-=======
     }
 
     HAL_Delay(10);
->>>>>>> origin/develop
   }
   /* USER CODE END 3 */
 }
 
 /**
-<<<<<<< HEAD
- * @brief System Clock Configuration
- * @retval None
- */
-=======
   * @brief System Clock Configuration
   * @retval None
   */
->>>>>>> origin/develop
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
-<<<<<<< HEAD
-   * in the RCC_OscInitTypeDef structure.
-   */
-=======
   * in the RCC_OscInitTypeDef structure.
   */
->>>>>>> origin/develop
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV2;
@@ -246,14 +164,9 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-<<<<<<< HEAD
-   */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
-=======
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
->>>>>>> origin/develop
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
@@ -267,14 +180,6 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
-<<<<<<< HEAD
-/* USER CODE END 4 */
-
-/**
- * @brief  This function is executed in case of error occurrence.
- * @retval None
- */
-=======
 /**
   * @brief  TIM3 更新中断回调（500ms 一次）：翻转 LED_RUN 做 1Hz 心跳
   * @param  htim 触发中断的定时器句柄
@@ -298,7 +203,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   * @brief  This function is executed in case of error occurrence.
   * @retval None
   */
->>>>>>> origin/develop
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -311,21 +215,12 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
-<<<<<<< HEAD
- * @brief  Reports the name of the source file and the source line number
- *         where the assert_param error has occurred.
- * @param  file: pointer to the source file name
- * @param  line: assert_param error line source number
- * @retval None
- */
-=======
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
   * @param  file: pointer to the source file name
   * @param  line: assert_param error line source number
   * @retval None
   */
->>>>>>> origin/develop
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
